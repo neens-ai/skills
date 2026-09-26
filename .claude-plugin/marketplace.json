@@ -1,0 +1,17 @@
+{
+  "name": "neens",
+  "owner": {
+    "name": "Neens",
+    "url": "https://neens.ai"
+  },
+  "metadata": {
+    "description": "Neens skills for coding agents"
+  },
+  "plugins": [
+    {
+      "name": "neens",
+      "source": "./",
+      "description": "Run the Neens failure-to-fix loop from your coding agent: triage failures, freeze regression sets, check judges, prove fixes, and gate releases."
+    }
+  ]
+}
