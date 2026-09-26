@@ -95,6 +95,13 @@ Rules for reading the numbers:
 - **Write the item count next to every rate:** "27/30 (90%)". On 10 items, one item is 10 points.
 - **If captured items are fewer than the total,** some inputs errored at the endpoint. Name how
   many. A verdict on 12 of 30 items is not a verdict on the set.
+- **A run status of `completed` does not mean the gate passed.** The status tracks regressions
+  only. Compare the pass rate against `min_pass_rate` yourself.
+- **Replay both sides the same way.** If the candidate branch changes how the agent reads golden
+  inputs (for example, a replay fix), run the baseline from the incumbent plus that same change.
+  Otherwise the comparison measures the replay, not the change being gated.
+- **Run pre-prod runs one at a time** when they share a small self-hosted database, and re-run a
+  run that failed with nothing captured before reading anything into it.
 
 ## Step 6: Verdict
 

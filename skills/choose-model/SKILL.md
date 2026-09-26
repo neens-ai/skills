@@ -51,6 +51,12 @@ the dataset to make it fit.
 Poll `get_model_sweep` until the status is terminal. Partial results are normal: read each arm's
 own status.
 
+If the launch reply never arrived, for example because the client timed out, do **not** launch
+again. Call `list_preprod_runs` and check whether the arm runs already exist. If they do, the
+sweep is running. Ask the user for its id from the Neens UI (**Model sweeps**), because only that
+id unlocks `get_model_sweep_comparison`. Per-run pass rates you work out yourself are not pass^k:
+say so if you report them before the proper comparison.
+
 ## Step 4: Decide
 
 Call `get_model_sweep_comparison` with the `sweep_id`. Leave `baseline_arm` out, so the declared

@@ -101,6 +101,12 @@ Read the verdict honestly:
   resolves to IPv6 first while the agent listens only on IPv4: Neens connects to the first
   resolved address, so bind the agent to both. Fix the endpoint and run again. Never report this
   as "the fix failed".
+- **It was scored by a judge that has nothing to do with this failure.** `run_verification` uses
+  the remediation's proof judges, and falls back to the project's generic Primary Score. It cannot
+  take a judge you choose. When the controls fail too, or the judge in the reply isn't the one
+  built for this failure, the verdict says nothing about the fix. Prove it with `gate-release`
+  instead: it replays the same frozen set against the current version and the candidate, with the
+  judges named explicitly.
 - **"dataset has no golden version".** The proof set was never frozen. Run `build-regression-set`
   for this failure, then call `run_verification` again with `dataset_id` set to it.
 

@@ -98,6 +98,24 @@ Can we ship branch fix/refund-policy?
   (a preview deploy, for example), or a harness that replays golden inputs. Each skill explains
   both options.
 
+## How they were tested
+
+Every skill was run end to end by Claude Code against a real Neens instance. The data was traffic
+from a multi-agent LangGraph support agent: real LLM calls, real injected tool failures, and no
+hand-written fixtures. A person answered every question the skills asked. Those runs:
+
+- **triage-failures:** found one cross-cutting failure that clustering had split across four
+  per-tool clusters (answers contradicting tool results), confirmed with the reviewer.
+- **build-regression-set:** froze it: 14 failures and 10 passing controls.
+- **write-judge:** twice refused to ship a judge that disagreed with the reviewer.
+- **fix-failure:** fixed the agent in the repo.
+- **gate-release:** measured the fix: 5/24 → 19/24 on the targeted judge with zero regressions,
+  reported as NO-GO against a 90% gate, and left the call to the human.
+- **choose-model:** compared two models with pass^k and declined to call a winner inside the noise.
+- **instrument-agent:** instrumented a new agent and read its first trace back.
+- **reliability-review:** refused to blame a KPI miss on a failure mode whose traces didn't
+  support its label.
+
 ## Keeping the skills honest
 
 The skills name real Neens tools and arguments. `scripts/check_skills.py` checks every tool name
