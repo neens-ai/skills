@@ -260,6 +260,46 @@
   }
  },
  {
+  "name": "create_judge_version",
+  "description": "Add a new VERSION to an existing llm_prompt judge instead of creating a copy. Pass the judge id and what changes \u2014 prompt_template, criteria and/or required_data; every other setting carries over from the latest version. The new version becomes the judge's current version but existing deployments keep scoring with their version: follow with deploy_judge (the reply's versionId), run_eval, then disable_deployment on the old deployment. A project API key can only version judges that belong to its own project.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "judge_id": {
+     "type": "string",
+     "description": "Judge id (required)."
+    },
+    "prompt_template": {
+     "type": "string",
+     "description": "New evaluation prompt; {target} is interpolated."
+    },
+    "criteria": {
+     "type": "string",
+     "description": "New pass/fail criteria."
+    },
+    "required_data": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Data to feed the judge (input/output/messages/context/expected_output/metadata)."
+    },
+    "note": {
+     "type": "string",
+     "description": "What changed and why, shown in the version history."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "judge_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "create_preprod_run",
   "description": "Create a pre-prod evaluation run over a dataset's frozen golden version at a candidate `version_label` (the branch/commit/deploy under test). It is created in `awaiting_traces` and runs NOTHING until start_preprod_run. runner_mode 'push' means Neens calls your endpoint itself and REQUIRES agent_connection_id; 'runner' (the default) means Neens waits for your own harness's traces. Gate it with min_pass_rate / max_regressions. Use run_verification instead when you are proving one specific remediation's fix.",
   "inputSchema": {
@@ -367,6 +407,31 @@
    "additionalProperties": false,
    "required": [
     "judge_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "disable_deployment",
+  "description": "Disable a judge deployment so it stops scoring \u2014 e.g. a superseded version after deploy_judge put the new one live, or a judge that is misbehaving. Non-destructive: the deployment, its scores and run history are kept, and deploy_judge can enable the version again. Pass the deployment id from list_judges (judges[].deployments[].id).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "deployment_id": {
+     "type": "string",
+     "description": "Deployment id (required)."
+    },
+    "judge_id": {
+     "type": "string",
+     "description": "Optional: the deployment's judge id (looked up when omitted)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "deployment_id"
    ]
   },
   "annotations": {
@@ -574,7 +639,7 @@
  },
  {
   "name": "get_eval_run",
-  "description": "Open one evaluation run by id: status, per-status task counts, success rate, and a page of its scored TASKS (target id, score, label, reason, error). `taskTotal` is the run's whole size; `tasks` is at most `limit` rows from `offset`. Use after run_eval to see what a judge actually decided, per trace.",
+  "description": "Open one evaluation run by id: status, per-status task counts, the judge's verdict counts, and a page of its scored TASKS (target id, score, label, reason, error). `passed`/`failed` are verdicts over the `scored` targets and passRate = passed/scored (null when nothing was scored) \u2014 report THIS as the pass rate. `errored` counts targets that could not be scored. completionRate is the share of attempted targets that finished scoring, NOT a pass rate; successRate is a deprecated alias of completionRate. `taskTotal` is the run's whole size; `tasks` is at most `limit` rows from `offset`. Use after run_eval to see what a judge actually decided, per trace.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -624,7 +689,7 @@
  },
  {
   "name": "get_fix_bundle",
-  "description": "Fetch a remediation's FIX BUNDLE. For an ACTIONABLE fix this is the paste-ready markdown brief (root cause + typed before/after fix spec + redacted failing exemplars), the pre-generated `neens eval run` CI command, the gate policy, the proof evals, and the acceptance criteria \u2014 everything a coding agent needs to implement the fix. The reply also carries failureLocus / actionability / owningComponent: when actionability is `advisory` the bundle is NOT a prompt fix \u2014 it describes a downstream/upstream service failure, names the owning service, and recommends a resilience/ownership action rather than an agent edit. Requires remediation_id (from list_open_remediations).",
+  "description": "Fetch a remediation's FIX BUNDLE. For an ACTIONABLE fix this is the paste-ready markdown brief (root cause + typed before/after fix spec + redacted failing exemplars), `verification` \u2014 the exact run_verification arguments that prove the fix \u2014 the gate policy, the proof evals, and the acceptance criteria: everything a coding agent needs to implement and prove the fix. `evalCommand` is an optional CI one-liner for the `neens` CLI, which is not yet published. The reply also carries failureLocus / actionability / owningComponent: when actionability is `advisory` the bundle is NOT a prompt fix \u2014 it describes a downstream/upstream service failure, names the owning service, and recommends a resilience/ownership action rather than an agent edit. Requires remediation_id (from list_open_remediations).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -665,8 +730,30 @@
   }
  },
  {
+  "name": "get_judge_alignment",
+  "description": "How well each judge agrees with HUMAN gold labels, as Neens measured it: precision, recall, TNR and Cohen's kappa (a judge FAIL is the positive class), the number of gold-labeled traces compared (nGold) and when it was measured. Pass judge_id (an id from list_judges, or the judge's name) for one judge \u2014 the reply then also carries the LIVE count of false alarms and misses. Use this instead of computing agreement yourself, e.g. after add_annotation + run_eval.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "judge_id": {
+     "type": "string",
+     "description": "Judge id (or name). Omit for every judge."
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max judges (1\u201350, default 25)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "get_judge_runs",
-  "description": "List the eval runs of ONE judge, newest first: status, targets scored, average score and pass rate per run, plus an active/historic summary. Use to find the run id to open with get_eval_run, or to see whether a judge has ever scored.",
+  "description": "List the eval runs of ONE judge, newest first: status, targets scored, average score and pass rate per run, plus an active/historic summary. Per run, `passed` and `failed` are the judge's verdicts over `scored` targets, `errored` counts targets that could not be scored, and passRate = passed/scored (null when nothing was scored). Use to find the run id to open with get_eval_run, or to see whether a judge has ever scored.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -897,7 +984,7 @@
  },
  {
   "name": "get_trace",
-  "description": "Fetch one trace (session) by id: agent, status, timing, cost, error, and a summary of its spans and tool calls. Use to inspect a specific trace before annotating it or diagnosing a failure.",
+  "description": "Fetch one trace (session) by id: agent, status, timing, error, a summary of its spans, the conversation (what the user asked and what the agent finally answered, as ordered role/content turns), and each tool call's arguments and result. Long content is truncated with a trailing '\u2026' and `complete` is false when anything was cut. Use to read the evidence before diagnosing a failure, annotating the trace, or writing a judge example from it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -918,7 +1005,7 @@
  },
  {
   "name": "get_verification_run",
-  "description": "Poll a verification (pre-prod) run by id for its proven verdict: status, whether it passed the gate, the failure reasons, regressions, pass rate, and score aggregate. Use to check a run started by run_verification that hadn't finished yet.",
+  "description": "Poll a verification (pre-prod) run by id for its proven verdict: status, whether it passed the gate, the failure reasons, regressions, pass rate, score aggregate, the gate and judges it was judged by, and \u2014 when items failed to run \u2014 captured/scored/errored counts, the top itemErrors and a failureClass (endpoint or judges). Use to check a run started by run_verification that hadn't finished yet.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -931,6 +1018,28 @@
    "required": [
     "run_id"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "list_agent_endpoints",
+  "description": "List the agent endpoints this project can evaluate against: id, name, base URL, request shape (openai_chat | input_json), invoke path, model and auth mode. The id is the agent_connection_id that create_preprod_run (push mode), start_model_sweep arms and run_verification take. Credentials are never returned; hasCredential says whether a token is on file.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "q": {
+     "type": "string",
+     "description": "Match on name, URL or model."
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max endpoints (1\u201350, default 25)."
+    }
+   },
+   "additionalProperties": false
   },
   "annotations": {
    "readOnlyHint": true,
@@ -1008,6 +1117,39 @@
   }
  },
  {
+  "name": "list_judge_disagreements",
+  "description": "The traces where a judge and the human gold label DISAGREE, with both verdicts, the judge's score and reason, and the human's critique. type 'false_positive' is a false alarm (judge failed it, human passed it); 'false_negative' is a miss (judge passed a real failure). Computed live from the current labels and scores. Use to decide what to change in the judge before create_judge_version.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "judge_id": {
+     "type": "string",
+     "description": "Judge id from list_judges, or its name (required)."
+    },
+    "type": {
+     "type": "string",
+     "enum": [
+      "false_positive",
+      "false_negative"
+     ],
+     "description": "Only false alarms, or only misses."
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max rows (1\u201350, default 20)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "judge_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "list_judges",
   "description": "List the project's judges (scorers) with their versions and DEPLOYMENTS. Each deployment carries the `id` that run_eval and create_preprod_run need, plus its trigger, status and last run \u2014 so picking a judge to score with takes one call. Use before run_eval, or to find an existing judge instead of creating a duplicate. (list_scores is different: it reports how each METRIC is trending.)",
   "inputSchema": {
@@ -1020,6 +1162,41 @@
     "limit": {
      "type": "integer",
      "description": "Max judges (1\u201350, default 25)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "list_model_sweeps",
+  "description": "List this project's model sweeps, newest first: id, name, status, version label, created time and each sweep's arms (label, model, status). Filter with `q` (matches the sweep name or version label) or `status`. Use it to recover a sweep id \u2014 e.g. when a start_model_sweep reply was lost to a timeout \u2014 BEFORE launching again: a sweep that already exists must not be relaunched. Then read it with get_model_sweep / get_model_sweep_comparison.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "q": {
+     "type": "string",
+     "description": "Case-insensitive match on the sweep name or version label."
+    },
+    "status": {
+     "type": "string",
+     "enum": [
+      "queued",
+      "running",
+      "completed",
+      "completed_with_failures",
+      "failed",
+      "cancelled",
+      "void"
+     ],
+     "description": "Only sweeps in this status."
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max sweeps (1\u201350, default 20)."
     }
    },
    "additionalProperties": false
@@ -1395,6 +1572,56 @@
   }
  },
  {
+  "name": "register_agent_endpoint",
+  "description": "Register the HTTP endpoint of an agent so Neens can call it with test cases (push runs, model sweeps, verification). Re-registering the same name and URL updates it. request_shape 'openai_chat' posts a chat-completions body (with `model`); 'input_json' posts {input} and reads {output}. The URL must be reachable from Neens \u2014 private, loopback and link-local addresses are refused unless the deployment allows them. auth_token is stored encrypted and never returned. Call list_agent_endpoints first to reuse an existing endpoint.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "description": "Endpoint name (required)."
+    },
+    "base_url": {
+     "type": "string",
+     "description": "http(s) base URL of the agent (required)."
+    },
+    "request_shape": {
+     "type": "string",
+     "enum": [
+      "openai_chat",
+      "input_json"
+     ],
+     "description": "Default 'openai_chat'."
+    },
+    "invoke_path": {
+     "type": "string",
+     "description": "Path appended to base_url, e.g. /invoke."
+    },
+    "model": {
+     "type": "string",
+     "description": "Model id sent in an openai_chat body."
+    },
+    "output_jsonpath": {
+     "type": "string",
+     "description": "Where to read the answer in a custom reply, e.g. data.answer."
+    },
+    "auth_token": {
+     "type": "string",
+     "description": "Optional bearer token; stored encrypted."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "name",
+    "base_url"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "report_fix_status",
   "description": "Report a fix's progress back to Neens: set the remediation's lifecycle `status` (proposed|accepted|applied|verified|closed|regressed) and/or `work_state` (todo|in_progress|done|archived), and record the `pr_url` + `commit_sha` where the fix landed. remediation_id + at least one other field required. Use after opening a PR or applying a fix so the loop is auditable.",
   "inputSchema": {
@@ -1445,7 +1672,7 @@
  },
  {
   "name": "run_eval",
-  "description": "Start an evaluation run for a deployed judge. Pass deployment_id (list_judges \u2192 deployments[].id, or deploy_judge's reply) OR just judge_id, in which case that judge's single enabled deployment is used \u2014 if it has none, or more than one, the tool says so and names the candidates. Never guess a deployment id. Scores the deployment's targeted traces and writes scores. By default the DEPLOYMENT's sampling filter decides how many traces a run covers; pass sample_size to cap THIS run at that many of the deployment's eligible traces (most-recent first) without editing the deployment \u2014 e.g. sample_size=1000 to score 1000 traces. Returns the run id, status, resolvedDeploymentId and total (the number actually queued, which is smaller than sample_size when fewer traces are eligible).",
+  "description": "Start an evaluation run for a deployed judge. Pass deployment_id (list_judges \u2192 deployments[].id, or deploy_judge's reply) OR just judge_id, in which case that judge's single enabled deployment is used \u2014 if it has none, or more than one, the tool says so and names the candidates. Never guess a deployment id. Scores the deployment's targeted traces and writes scores. By default the DEPLOYMENT's sampling filter decides how many traces a run covers; pass sample_size to cap THIS run at that many of the deployment's eligible traces (most-recent first) without editing the deployment \u2014 e.g. sample_size=1000 to score 1000 traces. Pass target_ids (trace ids) or dataset_id to score EXACTLY those traces instead \u2014 e.g. the traces the user already labeled, to check the judge against them; every id must be a trace in this project, and sample_size still caps the set. Returns the run id, status, resolvedDeploymentId and total (the number actually queued, which is smaller than sample_size when fewer traces are eligible).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1465,6 +1692,17 @@
      "type": "integer",
      "minimum": 1,
      "description": "Cap THIS run at this many of the deployment's eligible traces (most-recent first), leaving the deployment's sampling filter unchanged. Omit to let the deployment decide the count."
+    },
+    "target_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Score EXACTLY these trace ids instead of the deployment's eligible traces. Not with dataset_id."
+    },
+    "dataset_id": {
+     "type": "string",
+     "description": "Score the traces in this dataset (id or name). Not with target_ids."
     }
    },
    "additionalProperties": false
@@ -1476,7 +1714,7 @@
  },
  {
   "name": "run_verification",
-  "description": "PROVE a fix works: trigger a REAL pre-prod PUSH evaluation that calls the given candidate endpoint (endpoint_url \u2014 a preview deployment/branch \u2014 or an existing agent_connection_id) with the remediation's golden dataset, scores every response with the proof judges, and gates on regressions vs the baseline. version_label (the branch/commit/preview id) is required. Pass remediation_id to derive the golden dataset from its proof gate and stamp the result back onto the fix. Polls up to wait_seconds for a verdict and returns proven pass/fail + pass rate + regressions; if still running, returns the runId to poll with get_verification_run. This is the differentiator \u2014 a real eval against your branch, not a guess.",
+  "description": "PROVE a fix works: trigger a REAL pre-prod PUSH evaluation that calls the given candidate endpoint (endpoint_url \u2014 a preview deployment/branch, plus invoke_path when the agent listens on a sub-path \u2014 or an existing agent_connection_id) with the remediation's golden dataset, scores every response, and gates it. version_label (the branch/commit/preview id) is required. Pass remediation_id to derive the golden dataset, gate thresholds and scoring judge from its proof gate and stamp the result back onto the fix; judge_deployment_ids picks the judges and baseline_run_id compares against a prior run on the same items. The reply echoes the effective gate, judges and baseline plus `warnings` when the verdict would be weak. Polls up to wait_seconds and returns pass/fail, reasons, pass rate, regressions and, when items failed to run, itemErrors + failureClass (endpoint = your endpoint never answered, judges = nothing was scored \u2014 neither is a verdict on the fix); if still running, poll get_verification_run with the runId.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1490,11 +1728,15 @@
     },
     "endpoint_url": {
      "type": "string",
-     "description": "Preview deployment base URL to PUSH-eval."
+     "description": "Preview deployment URL to PUSH-eval. A path in the URL is used as-is (e.g. https://preview.example.com/eval/invoke)."
+    },
+    "invoke_path": {
+     "type": "string",
+     "description": "Path on endpoint_url to POST to, e.g. /eval/invoke (default: the URL itself for input_json, /chat/completions for openai_chat)."
     },
     "agent_connection_id": {
      "type": "string",
-     "description": "OR an existing agent_http connection id."
+     "description": "OR an existing agent endpoint connection (id, or its unique name)."
     },
     "auth_token": {
      "type": "string",
@@ -1512,13 +1754,49 @@
      "type": "string",
      "description": "Explicit golden dataset (else derived from remediation)."
     },
+    "dataset_version_id": {
+     "type": "string",
+     "description": "A specific frozen dataset version (default: the golden version)."
+    },
     "min_pass_rate": {
      "type": "number",
-     "description": "Gate: minimum pass rate (0\u20131)."
+     "minimum": 0,
+     "maximum": 1,
+     "description": "Gate: minimum pass rate (0\u20131). Default: the remediation's proof gate, else the deployment default."
     },
     "max_regressions": {
      "type": "integer",
-     "description": "Gate: max allowed regressions."
+     "minimum": 0,
+     "description": "Gate: max allowed regressions. Default: the remediation's proof gate (0)."
+    },
+    "judge_deployment_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Judge deployments that score the run (from list_judges). Default: the proof gate's judge, else the project default."
+    },
+    "baseline_kind": {
+     "type": "string",
+     "enum": [
+      "preprod_run",
+      "prod_window"
+     ],
+     "description": "What regressions are measured against. Default prod_window (7d of production scores)."
+    },
+    "baseline_run_id": {
+     "type": "string",
+     "description": "A prior run on the same dataset (e.g. the current version verified under version_label 'main') to compare against item by item."
+    },
+    "baseline_range": {
+     "type": "string",
+     "enum": [
+      "24h",
+      "7d",
+      "30d",
+      "all"
+     ],
+     "description": "prod_window baseline range (default 7d)."
     },
     "wait_seconds": {
      "type": "integer",
@@ -1599,7 +1877,7 @@
  },
  {
   "name": "start_model_sweep",
-  "description": "Launch a MULTI-MODEL SWEEP: replay ONE frozen golden dataset version against N candidate model arms, k times each, and report pass^k PER ARM \u2014 the evidence for 'which model should we ship'. Every arm runs under IDENTICAL conditions (same frozen items, same judges, same k, same gate); only the agent connection (and so the model) differs. Requires name, version_label, and arms \u2014 an array of {label, agent_connection_id} naming a registered agent_http connection per model. Give dataset_id (its golden version is used), dataset_version_id, or scenario_suite_id. Cost is bounded: the sweep is refused if it exceeds budget_usd or the deployment's arm/k/run ceilings. Returns the queued sweep \u2014 poll it with get_model_sweep. Preview the cost first with POST /model-sweeps/preview if you want an estimate before spending.",
+  "description": "Launch a MULTI-MODEL SWEEP: replay ONE frozen golden dataset version against N candidate model arms, k times each, and report pass^k PER ARM \u2014 the evidence for 'which model should we ship'. Every arm runs under IDENTICAL conditions (same frozen items, same judges, same k, same gate); only the agent connection (and so the model) differs. Requires name, version_label, and arms \u2014 an array of {label, agent_connection_id} naming a registered agent_http connection per model. Give dataset_id (its golden version is used), dataset_version_id, or scenario_suite_id. Cost is bounded: the sweep is refused if it exceeds budget_usd or the deployment's arm/k/run ceilings. Returns the queued sweep \u2014 poll it with get_model_sweep. Preview the cost first with POST /model-sweeps/preview if you want an estimate before spending. If this call times out, do NOT relaunch: find the sweep with list_model_sweeps (q = its name) first.",
   "inputSchema": {
    "type": "object",
    "properties": {

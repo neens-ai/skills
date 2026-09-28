@@ -19,7 +19,7 @@ It does not switch the judge on for every trace until it has passed that check.
 - A confirmed failure mode, ideally with labeled examples from `triage-failures`.
 - The project has an LLM connection for judges, backed by a capable model. A judge grading a
   whole trajectory needs at least the model class the agent itself runs on. If `run_eval` fails
-  with a connection or credential error, the user must add one in **Settings → LLM connections**.
+  with a connection or credential error, the user must add one in **Settings → LLM providers**.
 
 ## Step 1: Reuse before you create
 

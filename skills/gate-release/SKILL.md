@@ -22,8 +22,8 @@ Get three things from the user or the repo:
 1. **Version label**: `<branch>@<short sha>`, or a release tag.
 2. **How Neens reaches it**, one of:
    - **Push**: Neens calls the candidate's HTTP endpoint. It needs a registered agent endpoint:
-     an existing `agent_connection_id`, or one the user adds under **Settings → LLM connections →
-     Add agent endpoint**. The endpoint takes `{"input": …}` and returns `{"output": …}`, or is
+     an existing `agent_connection_id`, or one the user adds under **Settings → LLM providers →
+     Agent endpoints**. The endpoint takes `{"input": …}` and returns `{"output": …}`, or is
      OpenAI-compatible.
    - **Runner**: the user's own harness runs each golden input and sends the traces. Use this when
      the candidate cannot be exposed over HTTP. See Step 4.

@@ -67,7 +67,7 @@ It needs an HTTP endpoint for that build, running the new commit:
 |---|---|
 | An OpenAI-compatible `POST /chat/completions` at the base URL | `endpoint_url`: the base URL, `request_shape`: `openai_chat` |
 | A JSON endpoint taking `{"input": …}` and returning `{"output": …}`, served at the root path | `endpoint_url`: the base URL, `request_shape`: `input_json` |
-| The same JSON endpoint on a sub-path such as `/eval/invoke` | Register it once in Neens (**Settings → LLM connections → Add agent endpoint**, with its invoke path), then pass `agent_connection_id` |
+| The same JSON endpoint on a sub-path such as `/eval/invoke` | Register it once in Neens (**Settings → LLM providers → Agent endpoints**, with its invoke path), then pass `agent_connection_id` |
 
 The endpoint must be reachable from the Neens server. For Neens cloud, that means a preview
 deployment or a tunnel, not `localhost`. If the agent has no such endpoint, propose adding a small

@@ -12,7 +12,11 @@ Tool schemas come from `scripts/tools.snapshot.json` by default. Pass `--url` to
 live Neens instead, and `--write-snapshot` to refresh the committed snapshot from that instance:
 
     python3 scripts/check_skills.py
-    NEENS_TOKEN=nk_live_... python3 scripts/check_skills.py --url https://app.neens.ai --write-snapshot
+    NEENS_TOKEN=... python3 scripts/check_skills.py --url https://your-neens --write-snapshot
+
+`NEENS_TOKEN` must be a credential that instance accepts on `/mcp`. app.neens.ai accepts only a
+user sign-in token there (an `nk_live_` agent key gets a 401), so refresh against an instance that
+takes a key, or pass a user token.
 
 Standard library only.
 """

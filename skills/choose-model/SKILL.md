@@ -17,7 +17,7 @@ model sweep and reports it with the uncertainty left in.
 ## Step 1: Set up the arms
 
 A sweep compares **agent endpoints**. Each arm is the user's agent configured to use one model,
-registered in Neens as an agent endpoint (**Settings → LLM connections → Add agent endpoint**).
+registered in Neens as an agent endpoint (**Settings → LLM providers → Agent endpoints**).
 Ask the user for each arm's label, for example `gpt-4.1-mini`, and its `agent_connection_id`.
 
 - The first arm is the **incumbent**, the model in production today. It is the baseline.

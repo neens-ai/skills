@@ -20,13 +20,16 @@ example `mcp__neens__list_traces` in Claude Code.
 
 Call `get_current_project`.
 
-- **The tool does not exist.** Neens is not connected. Tell the user to run the command below and
-  sign in through the browser window it opens, then start a new session. Use their own host if they
-  self-host. Stop here.
+- **The tool does not exist.** Neens is not connected. Tell the user to add the Neens MCP server
+  (`https://app.neens.ai/mcp`, or their own host if they self-host) to their coding agent, sign in
+  through the browser window it opens, then start a new session. Stop here. For example:
 
   ```bash
-  claude mcp add --transport http neens https://app.neens.ai/mcp
+  claude mcp add --transport http neens https://app.neens.ai/mcp                 # Claude Code
+  codex mcp add neens --url https://app.neens.ai/mcp && codex mcp login neens    # Codex
   ```
+
+  Other clients (Cursor, VS Code, …): https://app.neens.ai/docs/coding-agents/connect/
 
 - **`projectId` is null.** The connection is not pinned to one project. Ask which project to use
   before reading anything.

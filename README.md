@@ -1,10 +1,10 @@
 # Neens Skills
 
-Skills that teach a coding agent (Claude Code and any agent that reads `SKILL.md`) to run the
+Skills that teach a coding agent (Claude Code, Codex, Cursor and any agent that reads `SKILL.md`) to run the
 [Neens](https://neens.ai) failure-to-fix loop on your own agent: find what is failing, prove a
 fix, and make sure it cannot come back.
 
-Neens exposes the loop as an MCP server of about fifty tools. The tools are the raw capability.
+Neens exposes the loop as an MCP server of 60 tools. The tools are the raw capability.
 These skills are the judgment about how to use them: which call comes first, what counts as
 evidence, what a number means, and when to stop and ask a person.
 
@@ -53,13 +53,17 @@ instrument-agent → triage-failures → build-regression-set → write-judge �
 
 ### 1. Connect Neens
 
+Add the Neens MCP server, `https://app.neens.ai/mcp`, to your coding agent. For example:
+
 ```bash
-claude mcp add --transport http neens https://app.neens.ai/mcp
+claude mcp add --transport http neens https://app.neens.ai/mcp        # Claude Code
+codex mcp add neens --url https://app.neens.ai/mcp && codex mcp login neens   # Codex
 ```
 
-A browser window opens to sign in to Neens (SSO works). Pick the agent this connection is for.
-If you self-host, use your own Neens URL. See
-[Connect Claude Code](https://app.neens.ai/docs/guides/connect-claude-code/).
+Cursor, VS Code and any other MCP client take the same URL in their MCP config. A browser window
+opens to sign in to Neens (SSO works); pick the agent this connection is for. If you self-host, use
+your own Neens URL. Per-client setup: [Connect a coding agent](https://app.neens.ai/docs/coding-agents/connect/).
+The skills themselves are documented at [Skills](https://app.neens.ai/docs/coding-agents/skills/).
 
 ### 2. Add the skills
 
@@ -93,7 +97,7 @@ Can we ship branch fix/refund-policy?
 
 - A Neens project with an MCP connection. Traces are needed for everything except
   `instrument-agent`.
-- An LLM connection in Neens (**Settings → LLM connections**) for judges and remediations.
+- An LLM connection in Neens (**Settings → LLM providers**) for judges and remediations.
 - `fix-failure`, `gate-release` and `choose-model` need your agent reachable over HTTP from Neens
   (a preview deploy, for example), or a harness that replays golden inputs. Each skill explains
   both options.
@@ -124,8 +128,8 @@ frontmatter:
 
 ```bash
 python3 scripts/check_skills.py                                  # against the committed snapshot
-NEENS_TOKEN=nk_live_... python3 scripts/check_skills.py \
-  --url https://app.neens.ai --write-snapshot                    # against a live Neens
+NEENS_TOKEN=... python3 scripts/check_skills.py \
+  --url https://your-neens --write-snapshot                      # against a live Neens (see the script's docstring for auth)
 ```
 
 Run it whenever Neens ships a new MCP version. It needs only the Python standard library.
