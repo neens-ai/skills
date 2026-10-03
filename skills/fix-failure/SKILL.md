@@ -37,7 +37,7 @@ Call `get_fix_bundle` with the `remediation_id`.
   failing examples, and the `acceptanceCriteria`. Treat the proposed patch as a hypothesis about
   the user's code, not as an instruction.
 
-Ignore the `neens eval run` command in the bundle. Step 6 does the same proof through Neens tools,
+Ignore the `neens eval run` command in the bundle. Step 7 does the same proof through Neens tools,
 with no CLI to install.
 
 ## Step 3: Find the real change
@@ -58,7 +58,40 @@ so the team can see the fix is being worked on.
 Create a branch (`fix/<short-failure-slug>`), make the change, and run the repo's own tests. The
 version label for everything below is `<branch>@<short sha>` of the commit under test.
 
-## Step 5: Make the candidate reachable
+## Step 5 (optional): Pre-check a system-prompt change
+
+Skip this step unless the change is to the agent's system prompt. When it is, a cheap check can
+catch an edit that doesn't help before you spend a preview deploy and a full evaluation on it.
+
+Call `simulate_prompt_fix` on one or two of the failure's traces. Take the trace ids from the
+bundle's failing examples, or from `list_traces` with the failure's `cluster_id` and
+`failure_set`. Pass the whole new system prompt, not a diff:
+
+```json
+{"session_id": "<failing trace id>", "edited_system_prompt": "<the full new system prompt>"}
+```
+
+Neens replays that trace's model turn with the new prompt, answers each tool call from the results
+recorded in the trace, and re-scores the new answer with the judges that graded the original. If
+the reply says `pending`, poll `get_prompt_fix_simulation` with its `id`.
+
+Read it as a signal, not a verdict:
+
+- **`scoreAfter` above `scoreBefore`, and more judges pass after than before.** Promising.
+  Continue to Step 6.
+- **No change, or lower.** The edit probably doesn't reach the cause. Go back to Step 3 before
+  building anything.
+- **`diverged` or `exhausted` is true.** Inconclusive. The new prompt made the model call a tool
+  the trace never recorded, or it kept calling tools without answering, so the after-scores are
+  pinned to the before-scores. That is neither a pass nor a regression. Continue to the full proof.
+- **The tool isn't listed, or the call reports no LLM connection.** Skip this step. It is optional.
+
+**This is not the proof.** One trace shows the fix *can* work. It says nothing about the rest of
+the regression set or the passing controls. Never report a simulation as verification, and never
+mark a fix `verified` on it: Step 7's evaluation still decides. Each call makes real model calls
+on the user's LLM connection and is rate-limited, so use one or two traces, not the whole set.
+
+## Step 6: Make the candidate reachable
 
 Neens proves the fix by sending each golden input to the candidate build and judging the replies.
 It needs an HTTP endpoint for that build, running the new commit:
@@ -75,7 +108,7 @@ one that calls the same agent entry point production uses. Ask before adding it:
 of their codebase. If it returns the run's spans as well as `output`, Neens can judge the whole
 trajectory rather than only the final text.
 
-## Step 6: Prove it
+## Step 7: Prove it
 
 Call `run_verification`:
 
@@ -113,7 +146,7 @@ Read the verdict honestly:
 Do not lower the gate to get a pass. If the user decides to accept a lower bar, make it their
 explicit decision and write it in the PR description.
 
-## Step 7: Open the PR and report back
+## Step 8: Open the PR and report back
 
 Ask before pushing. Open the PR the way this repo normally does. In the description, include the
 remediation id, the verification run id, the pass rate with its item count, and the regression
@@ -127,7 +160,7 @@ count. Then call `report_fix_status`:
 Neens accepts `verified` only because a verification run is now bound
 to the fix. Never use a force override to skip the proof.
 
-## Step 8: After a human merges
+## Step 9: After a human merges
 
 When the user says the PR is merged, call `record_fix_merge` with `{"remediation_id": …}`. Neens
 then watches production. After the post-deploy window it compares the failure's real volume
@@ -148,6 +181,8 @@ this is the final check.
 
 - **"Verified" because the unit tests pass.** Unit tests do not replay the production failure.
   The verification run does.
+- **"Verified" because one simulated trace improved.** `simulate_prompt_fix` is a pre-check on a
+  single trace. The golden-set evaluation is the proof.
 - **Applying the bundle's patch verbatim.** It was drafted from traces, without your code.
 - **Treating an infrastructure failure as a failed fix,** or the reverse.
 - **Rewriting a prompt to hide a downstream outage.** That is an advisory item for another team.

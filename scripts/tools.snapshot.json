@@ -941,6 +941,27 @@
   }
  },
  {
+  "name": "get_prompt_fix_simulation",
+  "description": "Poll a prompt fix simulation by id (from simulate_prompt_fix): status (queued|running|completed|failed), the overall and per-judge before/after scores, whether the replay diverged, and the replayed answer. A failed simulation carries its reason in `error`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "simulation_id": {
+     "type": "string",
+     "description": "Simulation id (required)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "simulation_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "get_prompt_optimization",
   "description": "Poll a prompt-optimization run by id: status (queued|running|completed|failed|cancelled), the baseline vs best HELD-OUT score and the improvement, rollouts and iterations spent, the candidate lineage with Pareto/winner flags, the verdict, the markdown proof report, and the emitted remediation id when the winner cleared the bar. A run that never beat baseline completes with emit=false \u2014 a legitimate result, not an error.",
   "inputSchema": {
@@ -1806,6 +1827,43 @@
    "additionalProperties": false,
    "required": [
     "version_label"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "simulate_prompt_fix",
+  "description": "Cheap PRE-CHECK for a system-prompt fix: replay ONE real failing trace (session_id) with an edited system prompt and re-score the new answer with the judges that graded the original. Tool calls are answered from the results recorded in the trace \u2014 no live traffic, nothing deployed, no production score overwritten. Returns overall + per-judge scoreBefore/scoreAfter and pass counts. diverged=true (the edited prompt called a tool the trace never recorded) or exhausted=true pins every after-score to its before-score \u2014 inconclusive, not a regression. Makes real, billable model calls on the agent's LLM connection and is rate-limited. One trace is NOT proof: prove the fix with run_verification on the golden set. If the reply has pending=true, poll get_prompt_fix_simulation.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session_id": {
+     "type": "string",
+     "description": "Id of the failing trace to replay (required)."
+    },
+    "edited_system_prompt": {
+     "type": "string",
+     "description": "The full corrected system prompt (required)."
+    },
+    "judge_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Judges to score with (default: the LLM judges that scored this trace). Ids not visible to this agent are refused, never silently swapped."
+    },
+    "connection_id": {
+     "type": "string",
+     "description": "LLM connection to replay with (default: the agent's default connection)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "session_id",
+    "edited_system_prompt"
    ]
   },
   "annotations": {
