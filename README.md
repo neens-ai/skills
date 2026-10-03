@@ -4,7 +4,7 @@ Skills that teach a coding agent (Claude Code, Codex, Cursor and any agent that 
 [Neens](https://neens.ai) failure-to-fix loop on your own agent: find what is failing, prove a
 fix, and make sure it cannot come back.
 
-Neens exposes the loop as an MCP server of 60 tools. The tools are the raw capability.
+Neens exposes the loop as an MCP server of 62 tools. The tools are the raw capability.
 These skills are the judgment about how to use them: which call comes first, what counts as
 evidence, what a number means, and when to stop and ask a person.
 
