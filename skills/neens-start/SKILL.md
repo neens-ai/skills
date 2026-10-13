@@ -3,8 +3,8 @@ name: neens-start
 description: >
   Entry point for working with Neens. Use when the user asks for help with Neens, asks "where do I
   start", asks what is wrong with their agent without naming a task, or asks for something no other
-  Neens skill matches. It checks the Neens MCP connection, takes a one-screen reading of the
-  project's failure→fix loop, and routes to the right skill. Do NOT use when a more specific Neens
+  Neens skill matches. It checks the Neens MCP connection, reads the project's action inbox (the
+  ranked failure→fix queue), and routes to the right skill. Do NOT use when a more specific Neens
   skill already matches the request; load that skill directly.
 ---
 
@@ -38,6 +38,54 @@ Call `get_current_project`.
 
 ## Step 2: Read the loop
 
+Call `get_action_inbox` with `{"range": "7d"}`. One call returns the same ranked "what to do
+next" queue the Insights page shows: what changed against the previous 7 days, how many open items
+sit at each fix-loop stage (`pipeline`), and the ranked rows (`issues`). This skill only reads the
+inbox. There is no tool to rate or dismiss a row, so do not offer to.
+
+Read the reply:
+
+- **`issues` has rows.** Show the top three to five, one line each: `label`, `severity`,
+  `windowAffected` sessions (and `prevAffected` before), the growth, and the next action for its
+  `stage` from the table below. Add one line for the `pipeline` counts. Write growth as
+  `growthPct` only when `growthBasis` is `computed`; otherwise write "new", "too few sessions to
+  call a trend" or "no comparison". A `stale` row has nothing in this window: list it last, if at
+  all.
+- **A row has `children`.** It groups the same failure across several agents.
+  Show the parent line, then one short line per child with its own agent, `stage` and next action.
+  Route on the child the user cares about, not on the parent.
+- **`issues` is empty and `inboxTotal` is 0.** Before calling it all clear, call `list_traces`
+  with `{"limit": 1}`. If `total` is 0, nothing has been ingested: route to `instrument-agent`. If
+  traces are flowing, say the inbox is clear for the last 7 days, give the trace count, and offer
+  the most useful next step from Step 3 for a healthy project: `gate-release` before the next
+  change ships, `reliability-review` for a status report, or `write-judge` if no judge is deployed
+  yet (check with `list_judges` with `{"limit": 10}`).
+- **A count is null.** It could not be read. Say "unknown", never zero.
+- **The reply is an error.** Report the error and its `status` as returned and fall back to the
+  survey below. A 401 or 403 means the sign-in or role, not an empty project.
+
+The inbox is computed from traces and needs no LLM connection. A project without one still gets
+its rows, but the steps after it that call a model (generating a remediation, running a judge)
+report a connection error or use a simpler fallback. If any later call says no LLM connection is
+configured, tell the user to add one under **Settings → LLM providers**.
+
+| `stage` | Next action | Load |
+|---|---|---|
+| `needs_fix` | No fix yet, or a shipped fix regressed. Confirm the failure from its traces, then fix it | `triage-failures` (unreviewed), then `fix-failure` |
+| `fix_proposed` | A fix is waiting. Read it with `get_remediation` (`remediationId`), implement it and prove it | `fix-failure` |
+| `in_pr` | A PR is open (`prUrl`), or the fix is merged and Neens is watching whether it holds. Before merge, check it is safe to ship; after merge, wait for the watch | `gate-release` before merge, none after |
+| `verified` | The fix held. Nothing to do; mention it as good news | none |
+| `downstream` | A service outside the agent owns it. Name the owner from `get_remediation`; do not change the prompt | `triage-failures` |
+
+`targetType` says what a row is: `cluster` (a failure cluster; `targetId` goes to
+`get_failure_mode`), `issue` (a named failure mode) or `regression` (a quality score that dropped;
+there is no fix source, so start with `triage-failures`). `fixSource` carries the id a fix is
+generated from and `remediationId` the fix itself, when one exists.
+
+### Fallback: the survey
+
+Use this only when `get_action_inbox` does not exist on this server (the client reports an unknown
+tool, or it is missing from the tool list) or returns an error. Older Neens servers do not have it.
 Make these calls in parallel. Each takes no required arguments.
 
 | Call | What it tells you |
@@ -59,11 +107,11 @@ the first row that matches the project's state.
 
 | Situation | Load |
 |---|---|
-| `list_traces` total is 0, or the user wants to send traces | `instrument-agent` |
-| The user wants to know what is failing, or there are failure modes nobody has reviewed | `triage-failures` |
+| No traces (`list_traces` total is 0), or the user wants to send traces | `instrument-agent` |
+| The user wants to know what is failing, the top inbox row is `needs_fix` or `downstream`, or there are failure modes nobody has reviewed | `triage-failures` |
 | A failure mode is confirmed and there is no dataset built from it | `build-regression-set` |
 | A failure mode needs an automated check, or a judge's verdicts are in doubt | `write-judge` |
-| There are open agent-fixable remediations, or the user wants to fix a failure | `fix-failure` |
+| The top inbox row is `fix_proposed`, there are open agent-fixable remediations, or the user wants to fix a failure | `fix-failure` |
 | The user is about to ship a change (branch, prompt, model, config) and wants a go/no-go | `gate-release` |
 | The user is choosing between models | `choose-model` |
 | The user wants a status report: "how are we doing", weekly review, exec summary | `reliability-review` |

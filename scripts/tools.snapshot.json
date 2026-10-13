@@ -507,6 +507,48 @@
   }
  },
  {
+  "name": "get_action_inbox",
+  "description": "Start here when asked what to fix next or what changed. One call returns the Insights action inbox: what changed versus the previous window (new failures, regressions, anomalies, fixes ready for review, fixes that held), how many open items sit at each fix-loop stage (needs_fix, fix_proposed, in_pr, verified, downstream), and the ranked queue of issues (at most 20) with severity, sessions affected now vs before, growth, estimated wasted spend and where each fix stands. Each row carries the ids the next step needs: targetId (pass to get_failure_mode when targetType is cluster), fixSource (cluster_id / failure_mode_id for generate_remediation when stage is needs_fix) and remediationId (for get_remediation / update_remediation). Unlike list_failure_modes (the latest clustering run, unranked by impact) and list_open_remediations (fixes only), this ranks failures AND their fix status together. A null count means it could not be read, never zero. Scoped to this connection's project.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "range": {
+     "type": "string",
+     "enum": [
+      "today",
+      "24h",
+      "7d",
+      "30d",
+      "all"
+     ],
+     "description": "Time window compared with the previous window of the same length (default 7d)."
+    },
+    "stage": {
+     "type": "string",
+     "enum": [
+      "needs_fix",
+      "fix_proposed",
+      "in_pr",
+      "verified",
+      "downstream"
+     ],
+     "description": "Only rows at this step of the fix loop: needs_fix (no fix yet), fix_proposed (a fix awaits review), in_pr (a PR is open), verified (the fix held), downstream (a service outside the agent owns it)."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 20,
+     "description": "Max rows (1\u201320, default 10)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "get_business_kpis",
   "description": "List the project's Business KPIs (a measure promoted to a committed target) with current value, whether the target is met, and the recent trend. Pass kpi_id to drill into one KPI, including the failure clusters eroding it. A null value reads targetStatus 'unknown' (never 'missed'). Use for 'how are our KPIs doing', 'are we hitting our targets', or 'what's dragging KPI X down'.",
   "inputSchema": {

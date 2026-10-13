@@ -33,7 +33,7 @@ Every skill in this repo follows eight rules:
 
 | Skill | Use it when |
 |---|---|
-| [neens-start](skills/neens-start/SKILL.md) | You're not sure where to begin. Checks the connection, reads the loop, routes you. |
+| [neens-start](skills/neens-start/SKILL.md) | You're not sure where to begin. Checks the connection, reads the action inbox, routes you. |
 | [instrument-agent](skills/instrument-agent/SKILL.md) | No traces yet. Wires OpenTelemetry to Neens and proves a trace arrived intact. |
 | [triage-failures](skills/triage-failures/SKILL.md) | "What's failing?" Reads the evidence, locates each failure, records your verdicts. |
 | [build-regression-set](skills/build-regression-set/SKILL.md) | A failure is confirmed. Freezes its traces, plus passing controls, into a golden set. |
@@ -42,6 +42,13 @@ Every skill in this repo follows eight rules:
 | [gate-release](skills/gate-release/SKILL.md) | "Can we ship this?" Replays every regression set against the candidate and returns GO, NO-GO or NO DATA. |
 | [choose-model](skills/choose-model/SKILL.md) | "Which model?" Runs a pass^k model sweep and reads it honestly. |
 | [reliability-review](skills/reliability-review/SKILL.md) | "How are we doing?" A one-page, evidence-backed status report. |
+
+`neens-start` and `reliability-review` begin with `get_action_inbox`, the same ranked "what to fix
+next" queue as the Insights page: what changed against the previous window, how many open items
+sit at each fix-loop stage (needs fix, fix proposed, in PR, verified, downstream), and the top
+rows with the ids the next call needs. It is read-only; rating rows is something people do in the
+Insights page, not agents. On a Neens server that does not have the tool yet, both skills fall back
+to surveying the loop with the individual list tools.
 
 The usual path for a new agent:
 
