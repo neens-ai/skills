@@ -5,7 +5,7 @@ The skills tell an agent to call Neens tools with specific arguments. When Neens
 argument, a skill silently starts sending calls that fail. This script catches that:
 
   * every SKILL.md has valid frontmatter (name == directory, a description of at most 1024 chars)
-  * every backticked tool-looking name is a real Neens tool
+  * every backticked tool-looking name is a real Neens tool, argument or enum value
   * every JSON argument object in a skill uses only keys the nearby tool actually accepts
 
 Tool schemas come from `scripts/tools.snapshot.json` by default. Pass `--url` to read them from a
@@ -82,6 +82,13 @@ def blocks(text: str) -> list[str]:
 def check(tools: list[dict]) -> list[str]:
     schema = {t["name"]: set(t.get("inputSchema", {}).get("properties", {})) for t in tools}
     all_args = set().union(*schema.values())
+    # Enum values a tool accepts (e.g. a `stage` filter) are quoted on purpose too.
+    all_args |= {
+        str(v)
+        for t in tools
+        for prop in t.get("inputSchema", {}).get("properties", {}).values()
+        for v in prop.get("enum", [])
+    }
     problems: list[str] = []
     for skill_md in sorted(SKILLS.glob("*/SKILL.md")):
         rel = skill_md.relative_to(ROOT)
