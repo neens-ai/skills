@@ -344,13 +344,18 @@
      "type": "string",
      "enum": [
       "prod_window",
-      "preprod_run"
+      "preprod_run",
+      "branch"
      ],
-     "description": "What to compare against (default: 7d prod window)."
+     "description": "What to compare against (default: 7d prod window). 'branch' = the newest completed run on baseline_branch for the same golden version."
     },
     "baseline_run_id": {
      "type": "string",
      "description": "The prior run, for baseline_kind preprod_run."
+    },
+    "baseline_branch": {
+     "type": "string",
+     "description": "The branch, for baseline_kind branch (e.g. main)."
     },
     "baseline_range": {
      "type": "string",
@@ -508,7 +513,7 @@
  },
  {
   "name": "get_action_inbox",
-  "description": "Start here when asked what to fix next or what changed. One call returns the Insights action inbox: what changed versus the previous window (new failures, regressions, anomalies, fixes ready for review, fixes that held), how many open items sit at each fix-loop stage (needs_fix, fix_proposed, in_pr, verified, downstream), and the ranked queue of issues (at most 20) with severity, sessions affected now vs before, growth, estimated wasted spend and where each fix stands. Each row carries the ids the next step needs: targetId (pass to get_failure_mode when targetType is cluster), fixSource (cluster_id / failure_mode_id for generate_remediation when stage is needs_fix) and remediationId (for get_remediation / update_remediation). Unlike list_failure_modes (the latest clustering run, unranked by impact) and list_open_remediations (fixes only), this ranks failures AND their fix status together. A null count means it could not be read, never zero. Scoped to this connection's project.",
+  "description": "Start here when asked what to fix next or what changed. One call returns the Insights action inbox: what changed versus the previous window (new failures, regressions, anomalies, fixes ready for review, fixes that held), how many open items sit at each fix-loop stage (needs_fix, fix_proposed, in_pr, verified, downstream), and the ranked queue of issues (at most 20) with severity, sessions affected now vs before, growth, estimated wasted spend and where each fix stands. Each row carries the ids the next step needs: targetId (pass to get_failure_mode when targetType is cluster), fixSource (cluster_id / failure_mode_id for generate_remediation when stage is needs_fix) and remediationId (for get_remediation / update_remediation). Unlike list_failure_modes (the latest clustering run, unranked by impact) and list_open_remediations (fixes only), this ranks failures AND their fix status together. A null count means it could not be read, never zero. Scoped to this connection's project; a connection spanning several agents gets a failure with the same name on 2+ agents as ONE row with agentCount and children (act on each child's ids).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -710,7 +715,7 @@
  },
  {
   "name": "get_failure_mode",
-  "description": "Fetch one failure cluster/mode by id: label, description, root cause, remediation summary, and member session ids. Use after list_failure_modes to drill into a specific mode.",
+  "description": "Fetch one failure cluster/mode by id: label, description, root cause, remediation summary, member session ids, and its distribution across agent versions (members per version vs that version's traffic, so a failure only one build produces stands out). Use after list_failure_modes to drill into a specific mode.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -731,7 +736,7 @@
  },
  {
   "name": "get_fix_bundle",
-  "description": "Fetch a remediation's FIX BUNDLE. For an ACTIONABLE fix this is the paste-ready markdown brief (root cause + typed before/after fix spec + redacted failing exemplars), `verification` \u2014 the exact run_verification arguments that prove the fix \u2014 the gate policy, the proof evals, and the acceptance criteria: everything a coding agent needs to implement and prove the fix. `evalCommand` is an optional CI one-liner for the `neens` CLI, which is not yet published. The reply also carries failureLocus / actionability / owningComponent: when actionability is `advisory` the bundle is NOT a prompt fix \u2014 it describes a downstream/upstream service failure, names the owning service, and recommends a resilience/ownership action rather than an agent edit. Requires remediation_id (from list_open_remediations).",
+  "description": "Fetch a remediation's FIX BUNDLE. For an ACTIONABLE fix this is the paste-ready markdown brief (root cause + typed before/after fix spec + redacted failing exemplars), `verification` \u2014 the exact run_verification arguments that prove the fix \u2014 the gate policy, the proof evals, and the acceptance criteria: everything a coding agent needs to implement and prove the fix. `evalCommand` is an optional CI one-liner for the `neens` CLI, which is not yet published. The reply also carries failureLocus / actionability / owningComponent: when actionability is `advisory` the bundle is NOT a prompt fix \u2014 it describes a downstream/upstream service failure, names the owning service, and recommends a resilience/ownership action rather than an agent edit. `proofAlignment` says which judge + golden dataset prove the fix and whether that judge is human-anchored (Cohen's \u03ba, nGold): an unanchored judge's pass rate is not proof. Requires remediation_id (from list_open_remediations).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -820,7 +825,7 @@
  },
  {
   "name": "get_model_sweep",
-  "description": "Poll a model sweep by id: its status (queued|running|completed|completed_with_failures|failed|cancelled|void), the pinned conditions, the cost estimate, and a PER-ARM summary \u2014 model, status, pass^k as greens/k, and terminal vs total runs. Partial results are normal: read the per-arm status rather than waiting for the whole sweep. Two honesty rules to respect when reporting: a status of `void` means the arms did NOT run under identical conditions, so the arms are NOT comparable and voidReason says why \u2014 never rank them; and an estimate with partial=true excludes the unpriced models it names, so its totalUsd is a floor, not the cost.",
+  "description": "Poll a model sweep by id: its status (queued|awaiting_traces|running|completed|completed_with_failures|failed|cancelled|void), the pinned conditions, the cost estimate, and a PER-ARM summary \u2014 model, status, pass^k as greens/k, and terminal vs total runs. Partial results are normal: read the per-arm status rather than waiting for the whole sweep. Two honesty rules to respect when reporting: a status of `void` means the arms did NOT run under identical conditions, so the arms are NOT comparable and voidReason says why \u2014 never rank them; and an estimate with partial=true excludes the unpriced models it names, so its totalUsd is a floor, not the cost.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -841,7 +846,7 @@
  },
  {
   "name": "get_model_sweep_comparison",
-  "description": "DECIDE a model sweep: the N-way comparison of its arms and the answer \u2014 which model to ship. Returns one verdict sentence plus a per-arm leaderboard (pass rate WITH its sample size n and a 95% confidence interval, pass^k greens/k, p95 latency, cost per case, regressions vs the declared baseline arm) and a verdict PER AGENT, because the answer legitimately differs by agent. Four rules to respect when reporting the result: (1) comparable=false means the sweep is VOID \u2014 its arms did not run under identical conditions, so never rank them, whatever their numbers say; (2) costPerCaseUsd=null means UNPRICED, never free \u2014 such an arm cannot win 'cheapest' and appears in verdict.excluded with reasonCode 'unpriced'; (3) rate=null means no data, not 0%; (4) an item counts as passed only when it passed EVERY repeat run \u2014 2 of 3 is not a pass, and flakyItems counts the difference. Read-only: computes nothing new and spends nothing.",
+  "description": "DECIDE a model sweep: the N-way comparison of its arms and the answer \u2014 which model to ship. Returns one verdict sentence plus a per-arm leaderboard (pass rate WITH its sample size n and a 95% confidence interval, pass^k greens/k, p95 latency, cost per case, regressions vs the declared baseline arm) and a verdict PER AGENT, because the answer legitimately differs by agent. Four rules to respect when reporting the result: (1) comparable=false means the sweep is VOID \u2014 its arms did not run under identical conditions, so never rank them, whatever their numbers say; (2) costPerCaseUsd=null means UNPRICED, never free \u2014 such an arm cannot win 'cheapest' and appears in verdict.excluded with reasonCode 'unpriced' ('partially_priced' when only some cases had a price \u2014 its figure is a floor); cost.noUsageCases / cost.unknownModelCases say why cases are unpriced when no model rate is missing (traces without token counts or a model name); latency avgMs/p95Ms=null means no measured duration, not 0 ms; (3) rate=null means no data, not 0%; (4) an item counts as passed only when it passed EVERY repeat run \u2014 2 of 3 is not a pass, and flakyItems counts the difference. Read-only: computes nothing new and spends nothing.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1475,7 +1480,7 @@
  },
  {
   "name": "list_traces",
-  "description": "List/search agent traces (sessions) in the current project. Filter by status, agent, FAILURE CLUSTER (`cluster_id` \u2014 the exact membership set, from list_clusters / list_failure_modes), score metric/label/status, issue mode, failure set, model, tool name, tags, source, free text, time bounds, conversation, and duration/token ranges. Returns the total match count and up to `limit` summary rows. Use to find traces to inspect, annotate, or add to a dataset.",
+  "description": "List/search agent traces (sessions) in the current project. Filter by status, agent, FAILURE CLUSTER (`cluster_id` \u2014 the exact membership set, from list_clusters / list_failure_modes), score metric/label/status, issue mode, failure set, model, tool name, tags, source, agent version, free text, time bounds, conversation, and duration/token ranges. Returns the total match count and up to `limit` summary rows. Use to find traces to inspect, annotate, or add to a dataset.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1535,6 +1540,10 @@
     "source": {
      "type": "string",
      "description": "Ingest source, e.g. otlp."
+    },
+    "version": {
+     "type": "string",
+     "description": "Agent version (the neens.version_label span attribute), exact match; '__unversioned__' selects traces with none."
     },
     "q": {
      "type": "string",
@@ -1735,7 +1744,7 @@
  },
  {
   "name": "run_eval",
-  "description": "Start an evaluation run for a deployed judge. Pass deployment_id (list_judges \u2192 deployments[].id, or deploy_judge's reply) OR just judge_id, in which case that judge's single enabled deployment is used \u2014 if it has none, or more than one, the tool says so and names the candidates. Never guess a deployment id. Scores the deployment's targeted traces and writes scores. By default the DEPLOYMENT's sampling filter decides how many traces a run covers; pass sample_size to cap THIS run at that many of the deployment's eligible traces (most-recent first) without editing the deployment \u2014 e.g. sample_size=1000 to score 1000 traces. Pass target_ids (trace ids) or dataset_id to score EXACTLY those traces instead \u2014 e.g. the traces the user already labeled, to check the judge against them; every id must be a trace in this project, and sample_size still caps the set. Returns the run id, status, resolvedDeploymentId and total (the number actually queued, which is smaller than sample_size when fewer traces are eligible).",
+  "description": "Start an evaluation run for a deployed judge. Pass deployment_id (list_judges \u2192 deployments[].id, or deploy_judge's reply) OR just judge_id, in which case that judge's single enabled deployment is used \u2014 if it has none, or more than one, the tool says so and names the candidates. Never guess a deployment id. Scores the deployment's targeted traces and writes scores. By default the DEPLOYMENT's sampling filter decides how many traces a run covers; pass sample_size to cap THIS run at that many of the deployment's eligible traces (most-recent first) without editing the deployment \u2014 e.g. sample_size=1000 to score 1000 traces. Pass target_ids (trace ids) or dataset_id to score EXACTLY those traces instead \u2014 e.g. the traces the user already labeled, to check the judge against them; every id must be a trace in this project, and sample_size still caps the set. A run scores at most the per-run maximum (2,000 traces by default): a larger sample_size, or more target_ids than that, is refused \u2014 split the work into several runs. If sample_size is omitted and the deployment would score more, the run scores an evenly spaced sample of the maximum and says sampleCapped=true. Returns the run id, status, resolvedDeploymentId, total (the number actually queued, which is smaller than sample_size when fewer traces are eligible), eligibleCount (how many traces it was drawn from), sampleCapped and maxSampleSize.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1754,7 +1763,7 @@
     "sample_size": {
      "type": "integer",
      "minimum": 1,
-     "description": "Cap THIS run at this many of the deployment's eligible traces (most-recent first), leaving the deployment's sampling filter unchanged. Omit to let the deployment decide the count."
+     "description": "Cap THIS run at this many of the deployment's eligible traces (most-recent first), leaving the deployment's sampling filter unchanged. At most the per-run maximum (2,000 by default). Omit to let the deployment decide the count, up to that maximum."
     },
     "target_ids": {
      "type": "array",
@@ -1877,6 +1886,29 @@
   }
  },
  {
+  "name": "set_scoring_budget",
+  "description": "Set this project's daily cap on automatic scoring: how many traces per UTC day each continuous (on-ingest) scorer may send to its judge. Admins only \u2014 a project API key can read the cap (list_judges \u2192 deployments[].dailyCap) but gets an error here. 0 pauses automatic scoring; clear=true removes the project value so the company default (or the platform default of 500) applies. Scorers with their own per-scorer cap keep it. A value above the company's daily scoring ceiling (the response's `ceiling`; null = unlimited) is rejected.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "max_scored_per_day": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "Traces per scorer per UTC day (0 = paused)."
+    },
+    "clear": {
+     "type": "boolean",
+     "description": "true clears the project value (inherit the company/platform default) instead of setting one."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "simulate_prompt_fix",
   "description": "Cheap PRE-CHECK for a system-prompt fix: replay ONE real failing trace (session_id) with an edited system prompt and re-score the new answer with the judges that graded the original. Tool calls are answered from the results recorded in the trace \u2014 no live traffic, nothing deployed, no production score overwritten. Returns overall + per-judge scoreBefore/scoreAfter and pass counts. diverged=true (the edited prompt called a tool the trace never recorded) or exhausted=true pins every after-score to its before-score \u2014 inconclusive, not a regression. Makes real, billable model calls on the agent's LLM connection and is rate-limited. One trace is NOT proof: prove the fix with run_verification on the golden set. If the reply has pending=true, poll get_prompt_fix_simulation.",
   "inputSchema": {
@@ -1977,7 +2009,7 @@
  },
  {
   "name": "start_model_sweep",
-  "description": "Launch a MULTI-MODEL SWEEP: replay ONE frozen golden dataset version against N candidate model arms, k times each, and report pass^k PER ARM \u2014 the evidence for 'which model should we ship'. Every arm runs under IDENTICAL conditions (same frozen items, same judges, same k, same gate); only the agent connection (and so the model) differs. Requires name, version_label, and arms \u2014 an array of {label, agent_connection_id} naming a registered agent_http connection per model. Give dataset_id (its golden version is used), dataset_version_id, or scenario_suite_id. Cost is bounded: the sweep is refused if it exceeds budget_usd or the deployment's arm/k/run ceilings. Returns the queued sweep \u2014 poll it with get_model_sweep. Preview the cost first with POST /model-sweeps/preview if you want an estimate before spending. If this call times out, do NOT relaunch: find the sweep with list_model_sweeps (q = its name) first.",
+  "description": "Launch a MULTI-MODEL SWEEP: replay ONE frozen golden dataset version against N candidate model arms, k times each, and report pass^k PER ARM \u2014 the evidence for 'which model should we ship'. Every arm runs under IDENTICAL conditions (same frozen items, same judges, same k, same gate); only the model differs. Requires name, version_label, and arms. Two kinds of arm, never mixed in one sweep: PUSH arms {label, agent_connection_id} name a registered agent_http endpoint per model that Neens calls; RUNNER arms {label, model, runner_mode: 'runner'} need no endpoint \u2014 Neens NEVER calls in, the CALLER drives them: run `neens sweep run --sweep-id <id> -- <your agent command>`, which runs the agent once per arm \u00d7 repetition \u00d7 item with NEENS_EVAL_MODEL set to the arm's model and sends the traces. Use runner arms for a local or CI agent with no public URL. A runner sweep starts awaiting_traces and its arms list the child run ids. Give dataset_id (its golden version is used), dataset_version_id, or scenario_suite_id. Cost is bounded: the sweep is refused if it exceeds budget_usd or the deployment's arm/k/run ceilings. Returns the queued sweep \u2014 poll it with get_model_sweep. Preview the cost first with POST /model-sweeps/preview if you want an estimate before spending. If this call times out, do NOT relaunch: find the sweep with list_model_sweeps (q = its name) first.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1991,7 +2023,7 @@
     },
     "arms": {
      "type": "array",
-     "description": "One entry per model under comparison (required). Two arms pointing at the SAME connection is not a comparison and is rejected.",
+     "description": "One entry per model under comparison (required). All push or all runner. Two arms on the SAME connection (push) or the SAME model (runner) is not a comparison and is rejected.",
      "items": {
       "type": "object",
       "properties": {
@@ -2001,12 +2033,23 @@
        },
        "agent_connection_id": {
         "type": "string",
-        "description": "Id of a registered agent_http connection whose endpoint runs that model."
+        "description": "PUSH arm: id of a registered agent_http connection whose endpoint runs that model."
+       },
+       "model": {
+        "type": "string",
+        "description": "RUNNER arm: the model id your agent is told to run (NEENS_EVAL_MODEL), e.g. 'claude-haiku-4-5'."
+       },
+       "runner_mode": {
+        "type": "string",
+        "enum": [
+         "push",
+         "runner"
+        ],
+        "description": "'push' (default): Neens calls agent_connection_id. 'runner': the caller drives the arm with `neens sweep run`; requires model."
        }
       },
       "required": [
-       "label",
-       "agent_connection_id"
+       "label"
       ],
       "additionalProperties": false
      }
