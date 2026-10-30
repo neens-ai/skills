@@ -29,7 +29,9 @@ the nearest one and say which you used.
 | `list_traces` with `{"started_after": "<window start>", "limit": 1}` | Volume: `total` traces in the window |
 
 For each KPI that is `missed` or has a `regressed` trend, call `get_business_kpis` with its `kpi_id`
-to see which failure clusters are eroding it.
+to see which failure clusters are eroding it. For a quality metric that dropped, `list_score_rows`
+with `{"metric_key": "<metric>", "status": "fail", "range": "7d", "limit": 5}` returns the traces it
+failed, with the judge's reason, so the line in the report can cite them.
 
 The inbox is read-only here. There is no tool to rate or dismiss a row, so do not offer to.
 

@@ -4,7 +4,7 @@ Skills that teach a coding agent (Claude Code, Codex, Cursor and any agent that 
 [Neens](https://neens.ai) failure-to-fix loop on your own agent: find what is failing, prove a
 fix, and make sure it cannot come back.
 
-Neens exposes the loop as an MCP server of 64 tools. The tools are the raw capability.
+Neens exposes the loop as an MCP server of 66 tools (as of Neens v0.28.0). The tools are the raw capability.
 These skills are the judgment about how to use them: which call comes first, what counts as
 evidence, what a number means, and when to stop and ask a person.
 
@@ -34,14 +34,19 @@ Every skill in this repo follows eight rules:
 | Skill | Use it when |
 |---|---|
 | [neens-start](skills/neens-start/SKILL.md) | You're not sure where to begin. Checks the connection, reads the action inbox, routes you. |
-| [instrument-agent](skills/instrument-agent/SKILL.md) | No traces yet. Wires OpenTelemetry to Neens and proves a trace arrived intact. |
+| [instrument-agent](skills/instrument-agent/SKILL.md) | No traces yet. Wires OpenTelemetry to Neens for your framework and proves a trace arrived intact. |
 | [triage-failures](skills/triage-failures/SKILL.md) | "What's failing?" Reads the evidence, locates each failure, records your verdicts. |
 | [build-regression-set](skills/build-regression-set/SKILL.md) | A failure is confirmed. Freezes its traces, plus passing controls, into a golden set. |
-| [write-judge](skills/write-judge/SKILL.md) | A failure needs an automated check. Writes a pass/fail judge and measures it against you. |
+| [write-judge](skills/write-judge/SKILL.md) | A failure needs an automated check that takes judgment. Writes a pass/fail LLM judge and measures it against you. |
+| [write-code-judge](skills/write-code-judge/SKILL.md) | A rule decides the failure (a schema, a required tool call, a pattern, a limit). Writes a sandboxed Python judge, tests it on real traces, and measures it against you. |
 | [fix-failure](skills/fix-failure/SKILL.md) | Time to fix. Implements the remediation in your repo, proves it, and reports PR and proof back. |
 | [gate-release](skills/gate-release/SKILL.md) | "Can we ship this?" Replays every regression set against the candidate and returns GO, NO-GO or NO DATA. |
 | [choose-model](skills/choose-model/SKILL.md) | "Which model?" Runs a pass^k model sweep and reads it honestly. |
 | [reliability-review](skills/reliability-review/SKILL.md) | "How are we doing?" A one-page, evidence-backed status report. |
+
+`instrument-agent` covers Google ADK, AWS Bedrock AgentCore, Strands, LlamaIndex, Agno, smolagents,
+Pydantic AI, the Vercel AI SDK, LangGraph, the OpenAI Agents SDK, CrewAI and the Claude Agent SDK,
+plus plain OpenTelemetry for anything else.
 
 `neens-start` and `reliability-review` begin with `get_action_inbox`, the same ranked "what to fix
 next" queue as the Insights page: what changed against the previous window, how many open items
@@ -53,8 +58,11 @@ to surveying the loop with the individual list tools.
 The usual path for a new agent:
 
 ```
-instrument-agent → triage-failures → build-regression-set → write-judge → fix-failure → gate-release
+instrument-agent → triage-failures → build-regression-set → write-judge or write-code-judge → fix-failure → gate-release
 ```
+
+`write-judge` sends a failure to `write-code-judge` when a rule decides it, and both judges can
+prove a fix in `fix-failure` and gate a release in `gate-release`.
 
 ## Install
 
@@ -105,6 +113,9 @@ Can we ship branch fix/refund-policy?
 - A Neens project with an MCP connection. Traces are needed for everything except
   `instrument-agent`.
 - An LLM connection in Neens (**Settings → LLM providers**) for judges and remediations.
+- `write-code-judge` needs a plan that includes code judges, code execution turned on for your
+  Neens deployment, and a signed-in MCP connection (a project API key cannot run code). The skill
+  says what to do when any of these is missing.
 - `fix-failure`, `gate-release` and `choose-model` need your agent reachable over HTTP from Neens
   (a preview deploy, for example), or a harness that replays golden inputs. Each skill explains
   both options.
@@ -119,6 +130,10 @@ hand-written fixtures. A person answered every question the skills asked. Those 
   per-tool clusters (answers contradicting tool results), confirmed with the reviewer.
 - **build-regression-set:** froze it: 14 failures and 10 passing controls.
 - **write-judge:** twice refused to ship a judge that disagreed with the reviewer.
+- **write-code-judge:** run against a local Neens with the development sandbox runner, on traces
+  sent through the OpenTelemetry endpoint: tested the code on a known pass, a known fail and an
+  out-of-scope trace, created and ran the judge, surfaced a miss against a gold label, versioned it
+  and retired the old deployment. It also reported code execution being off, as the skill says.
 - **fix-failure:** fixed the agent in the repo.
 - **gate-release:** measured the fix: 5/24 → 19/24 on the targeted judge with zero regressions,
   reported as NO-GO against a 90% gate, and left the call to the human.

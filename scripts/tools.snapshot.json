@@ -214,13 +214,21 @@
  },
  {
   "name": "create_judge",
-  "description": "Create an LLM-prompt judge (scorer) in the project. Provide a prompt_template (use {target} for the trace/session), optional criteria, and required_data (input/output/messages/context/expected_output/metadata). Creates the judge + version 1 (experimental). Follow with deploy_judge then run_eval to score traces.",
+  "description": "Create a judge (scorer) in the project. Default type llm_prompt: provide a prompt_template (use {target} for the trace/session), optional criteria, and required_data (input/output/messages/context/expected_output/metadata). Or type custom_python, a CODE judge, for a check that is a rule (a pattern, a schema, a word budget): provide code, and test it with test_code_judge BEFORE creating. The code is a top-level `def judge(target)` or `def judge(target, ctx)`; `target` is a dict of the required_data keys (output, input, messages, context, expected_output, metadata). It returns {\"score\": float} on the default 0\u20131 scale, or {\"label\": \u2026} when output_spec is binary/categorical (the shape MUST match output_spec, or every trace fails with an invalid return value); `ctx.skip(\"reason\")` skips a trace. The code runs in an isolated sandbox with NO network: external APIs, URLs and downloads all fail (requests imports but every call fails), nothing can be installed (only the runtime's packages), there are no secrets, and nothing persists between traces. The one way out is ctx.llm, with capabilities {\"llm\": true}. Needs a plan with code judges (Gold). list_code_runtimes lists the packages. Creates the judge + version 1 (experimental). Follow with deploy_judge then run_eval to score traces.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "name": {
      "type": "string",
      "description": "Judge name (required)."
+    },
+    "type": {
+     "type": "string",
+     "enum": [
+      "llm_prompt",
+      "custom_python"
+     ],
+     "description": "Default 'llm_prompt'. 'custom_python' = a code judge."
     },
     "scope": {
      "type": "string",
@@ -230,16 +238,25 @@
      ],
      "description": "Default 'trace'."
     },
+    "level": {
+     "type": "string",
+     "enum": [
+      "project",
+      "org",
+      "platform"
+     ],
+     "description": "Default 'project' (this agent). 'org' / 'platform' apply it more widely and need a company admin for code judges."
+    },
     "description": {
      "type": "string"
     },
     "prompt_template": {
      "type": "string",
-     "description": "Evaluation prompt; {target} is interpolated."
+     "description": "llm_prompt: evaluation prompt; {target} is interpolated."
     },
     "criteria": {
      "type": "string",
-     "description": "What good/bad looks like."
+     "description": "llm_prompt: what good/bad looks like."
     },
     "required_data": {
      "type": "array",
@@ -247,6 +264,30 @@
       "type": "string"
      },
      "description": "Data to feed the judge (default input/output/messages/metadata)."
+    },
+    "code": {
+     "type": "string",
+     "description": "custom_python only: the Python source (required for that type)."
+    },
+    "output_spec": {
+     "type": "object",
+     "description": "The judge's scale. Omit for 0\u20131. {\"type\": \"binary\", \"pass_label\": \"pass\", \"fail_label\": \"fail\"} for pass/fail; {\"type\": \"categorical\", \"labels\": [worst \u2026 best]}; {\"type\": \"numeric_range\", \"min\": 1, \"max\": 10}."
+    },
+    "limits": {
+     "type": "object",
+     "description": "custom_python: {\"timeout_s\": \u226430 (default 5), \"memory_mb\": \u22641024 (default 256)} per trace."
+    },
+    "runtime": {
+     "type": "string",
+     "description": "custom_python: runtime id to pin (default: the current one)."
+    },
+    "requirements": {
+     "type": "string",
+     "description": "custom_python: requirements.txt lines the runtime must already meet (nothing is installed), e.g. \"numpy>=2\"."
+    },
+    "capabilities": {
+     "type": "object",
+     "description": "custom_python: {\"llm\": true} to allow ctx.llm calls through the agent's LLM connection. Off by default."
     }
    },
    "additionalProperties": false,
@@ -261,7 +302,7 @@
  },
  {
   "name": "create_judge_version",
-  "description": "Add a new VERSION to an existing llm_prompt judge instead of creating a copy. Pass the judge id and what changes \u2014 prompt_template, criteria and/or required_data; every other setting carries over from the latest version. The new version becomes the judge's current version but existing deployments keep scoring with their version: follow with deploy_judge (the reply's versionId), run_eval, then disable_deployment on the old deployment. A project API key can only version judges that belong to its own project.",
+  "description": "Add a new VERSION to an existing judge instead of creating a copy. Pass the judge id and what changes: for an llm_prompt judge prompt_template, criteria, output_spec and/or required_data; for a custom_python (code) judge code, output_spec, limits, requirements, capabilities, runtime and/or required_data (test new code with test_code_judge first). Every other setting carries over from the latest version. The new version becomes the judge's current version but existing deployments keep scoring with their version: follow with deploy_judge (the reply's versionId), run_eval, then disable_deployment on the old deployment. A project API key can only version judges that belong to its own project.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -271,11 +312,11 @@
     },
     "prompt_template": {
      "type": "string",
-     "description": "New evaluation prompt; {target} is interpolated."
+     "description": "llm_prompt: new evaluation prompt; {target} is interpolated."
     },
     "criteria": {
      "type": "string",
-     "description": "New pass/fail criteria."
+     "description": "llm_prompt: new pass/fail criteria."
     },
     "required_data": {
      "type": "array",
@@ -283,6 +324,30 @@
       "type": "string"
      },
      "description": "Data to feed the judge (input/output/messages/context/expected_output/metadata)."
+    },
+    "code": {
+     "type": "string",
+     "description": "custom_python only: the Python source (required for that type)."
+    },
+    "output_spec": {
+     "type": "object",
+     "description": "The judge's scale. Omit for 0\u20131. {\"type\": \"binary\", \"pass_label\": \"pass\", \"fail_label\": \"fail\"} for pass/fail; {\"type\": \"categorical\", \"labels\": [worst \u2026 best]}; {\"type\": \"numeric_range\", \"min\": 1, \"max\": 10}."
+    },
+    "limits": {
+     "type": "object",
+     "description": "custom_python: {\"timeout_s\": \u226430 (default 5), \"memory_mb\": \u22641024 (default 256)} per trace."
+    },
+    "runtime": {
+     "type": "string",
+     "description": "custom_python: runtime id to pin (default: the current one)."
+    },
+    "requirements": {
+     "type": "string",
+     "description": "custom_python: requirements.txt lines the runtime must already meet (nothing is installed), e.g. \"numpy>=2\"."
+    },
+    "capabilities": {
+     "type": "object",
+     "description": "custom_python: {\"llm\": true} to allow ctx.llm calls through the agent's LLM connection. Off by default."
     },
     "note": {
      "type": "string",
@@ -1125,6 +1190,19 @@
      "description": "Max clusters (1\u201350, default 25)."
     }
    },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "list_code_runtimes",
+  "description": "List the Python runtimes code (custom_python) judges run on, with the exact packages each can import, the time/memory limits, and whether code execution is enabled on this deployment.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
    "additionalProperties": false
   },
   "annotations": {
@@ -2166,6 +2244,70 @@
     "max_iterations": {
      "type": "integer",
      "description": "Reflection iterations (clamped to the cap)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "test_code_judge",
+  "description": "Test-run custom_python (code) judge code on up to 3 of this project's traces in the sandbox WITHOUT saving anything. Pass code (and output_spec, matching what the code returns), or judge_id to test a saved code judge's current code \u2014 any code fields you pass override it. trace_ids picks the traces (list_traces); omit them to use recent ones. Each result carries the score/pass/label, printed stdout and, on failure, the error class + line. A trace id that is not in this project is reported in notInProject and never read. The code is a top-level `def judge(target)` or `def judge(target, ctx)`; `target` is a dict of the required_data keys (output, input, messages, context, expected_output, metadata). It returns {\"score\": float} on the default 0\u20131 scale, or {\"label\": \u2026} when output_spec is binary/categorical (the shape MUST match output_spec, or every trace fails with an invalid return value); `ctx.skip(\"reason\")` skips a trace. The code runs in an isolated sandbox with NO network: external APIs, URLs and downloads all fail (requests imports but every call fails), nothing can be installed (only the runtime's packages), there are no secrets, and nothing persists between traces. The one way out is ctx.llm, with capabilities {\"llm\": true}. Needs a plan with code judges (Gold).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "code": {
+     "type": "string",
+     "description": "Python source to test (omit to use judge_id's code)."
+    },
+    "judge_id": {
+     "type": "string",
+     "description": "A saved custom_python judge to test."
+    },
+    "trace_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Up to 3 trace ids."
+    },
+    "scope": {
+     "type": "string",
+     "enum": [
+      "trace",
+      "session"
+     ],
+     "description": "Default 'trace'."
+    },
+    "required_data": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Data to feed the code (default input/output/messages/metadata)."
+    },
+    "output_spec": {
+     "type": "object",
+     "description": "The judge's scale. Omit for 0\u20131. {\"type\": \"binary\", \"pass_label\": \"pass\", \"fail_label\": \"fail\"} for pass/fail; {\"type\": \"categorical\", \"labels\": [worst \u2026 best]}; {\"type\": \"numeric_range\", \"min\": 1, \"max\": 10}."
+    },
+    "limits": {
+     "type": "object",
+     "description": "custom_python: {\"timeout_s\": \u226430 (default 5), \"memory_mb\": \u22641024 (default 256)} per trace."
+    },
+    "runtime": {
+     "type": "string",
+     "description": "custom_python: runtime id to pin (default: the current one)."
+    },
+    "requirements": {
+     "type": "string",
+     "description": "custom_python: requirements.txt lines the runtime must already meet (nothing is installed), e.g. \"numpy>=2\"."
+    },
+    "capabilities": {
+     "type": "object",
+     "description": "custom_python: {\"llm\": true} to allow ctx.llm calls through the agent's LLM connection. Off by default."
     }
    },
    "additionalProperties": false

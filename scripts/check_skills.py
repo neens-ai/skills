@@ -129,6 +129,8 @@ FIELDS = {
     "needs_grounding", "working_as_intended", "on_new_trace", "input_json", "openai_chat",
     "prod_window", "preprod_run", "completed_with_regressions", "primary_score",
     "failure_set", "is_gold", "required_data", "prompt_template", "baseline_kind",
+    # code-judge error classes and evidence fields quoted from test_code_judge replies
+    "invalid_result", "user_exception", "turn_count",
     # standard OpenTelemetry / environment names used by instrument-agent
     "force_flush", "tracer_provider", "final_answer", "final_output",
     # an example tool name from the user's own agent

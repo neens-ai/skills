@@ -75,14 +75,19 @@ comparable to a run today.
    that with `instrument-agent` before relying on this set.
 3. Call `list_judges` and look for a deployed judge that detects this failure. A regression set
    with no judge that recognizes the failure is a list of inputs, not a test. If none exists,
-   the next step is `write-judge`.
+   the next step is `write-judge`, or `write-code-judge` when a rule decides the failure.
 
 ## Report
 
 - Dataset name and id, golden version number, and how many failures and controls it holds
 - The cluster id it came from
 - Whether a judge covers it, and which one
-- The next step: `write-judge` if no judge covers it, otherwise `fix-failure`
+- The next step: `write-judge` (or `write-code-judge` when a rule decides the failure) if no judge
+  covers it, otherwise `fix-failure`
+
+To hand the frozen set to another system (a CI job, an offline eval), `export_dataset_version` with
+the dataset and version number returns a manifest: row count, schema, a sha256 checksum and the URL
+to download the full export with the same credential. Pass the manifest, not a copy of the rows.
 
 ## Anti-patterns
 
