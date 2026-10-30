@@ -30,9 +30,13 @@ Call `get_fix_bundle` with the `remediation_id`.
 
 - **`actionability` is `advisory`.** The failure lives in another service (`owningComponent`).
   There is no code change here for the agent. Write a short note for that team, with the component,
-  the error, and two trace ids, and stop. Record the outcome only if the user asks.
+  the error, and two trace ids, and stop. If the user asks to record the outcome, close the item
+  with `update_remediation` and `{"remediation_id": …, "status": "closed"}`.
 - **`groundingStatus` is `needs_grounding`.** Neens itself is not confident in this fix. Say so and
-  ask before continuing.
+  ask before continuing. If new failing traces have arrived since it was generated, offer
+  `regenerate_remediation` with the `remediation_id`: it re-runs the current engine for the same
+  failure, archives the old proposal (nothing is deleted) and returns the new one, whose id
+  replaces the old one from here on.
 - **Otherwise** read the whole `markdown` brief: the root cause, the proposed before/after, the
   failing examples, and the `acceptanceCriteria`. Treat the proposed patch as a hypothesis about
   the user's code, not as an instruction.
@@ -100,7 +104,12 @@ It needs an HTTP endpoint for that build, running the new commit:
 |---|---|
 | An OpenAI-compatible `POST /chat/completions` at the base URL | `endpoint_url`: the base URL, `request_shape`: `openai_chat` |
 | A JSON endpoint taking `{"input": …}` and returning `{"output": …}`, served at the root path | `endpoint_url`: the base URL, `request_shape`: `input_json` |
-| The same JSON endpoint on a sub-path such as `/eval/invoke` | Register it once in Neens (**Settings → LLM providers → Agent endpoints**, with its invoke path), then pass `agent_connection_id` |
+| The same JSON endpoint on a sub-path such as `/eval/invoke` | the same, plus `invoke_path`: `/eval/invoke` |
+| An endpoint already registered in Neens | `agent_connection_id`: its id from `list_agent_endpoints` |
+
+To reuse the candidate across several runs (a re-verification, then `gate-release`), register it
+once with `register_agent_endpoint` and pass the returned `id` as `agent_connection_id`. A bearer
+token goes in `auth_token` either way; Neens stores it encrypted and never returns it.
 
 The endpoint must be reachable from the Neens server. For Neens cloud, that means a preview
 deployment or a tunnel, not `localhost`. If the agent has no such endpoint, propose adding a small
@@ -129,17 +138,20 @@ Read the verdict honestly:
   items regressed, then `get_preprod_trajectory` on one of them to see what the agent did
   differently. Fix the code and verify again with a new version label.
 - **`passed: false` with `passRate: null` or `captured: 0`.** Nothing was judged. That is an
-  infrastructure failure, not a verdict on the fix. The usual causes are an endpoint Neens cannot
+  infrastructure failure, not a verdict on the fix. `failureClass` says which side: `endpoint`
+  (the candidate never answered; `itemErrors` has the errors) or `judges` (nothing was scored). The usual causes are an endpoint Neens cannot
   reach, a wrong request shape, or a wrong path (a 404 or 405). Another cause is a hostname that
   resolves to IPv6 first while the agent listens only on IPv4: Neens connects to the first
   resolved address, so bind the agent to both. Fix the endpoint and run again. Never report this
   as "the fix failed".
-- **It was scored by a judge that has nothing to do with this failure.** `run_verification` uses
-  the remediation's proof judges, and falls back to the project's generic Primary Score. It cannot
-  take a judge you choose. When the controls fail too, or the judge in the reply isn't the one
-  built for this failure, the verdict says nothing about the fix. Prove it with `gate-release`
-  instead: it replays the same frozen set against the current version and the candidate, with the
-  judges named explicitly.
+- **It was scored by a judge that has nothing to do with this failure.** Without
+  `judge_deployment_ids`, `run_verification` uses the remediation's proof judges, and falls back to
+  the project's generic Primary Score. The reply's `judges` and `judgesSource` say which happened,
+  and `warnings` flags a weak verdict. When the judge isn't the one built for this failure, the
+  verdict says nothing about the fix: run it again with a new version label and
+  `"judge_deployment_ids": ["<the checked judge's deployment id>"]` (an LLM judge from
+  `write-judge` or a code judge from `write-code-judge`). If there is no checked judge yet, write
+  one before claiming the fix.
 - **"dataset has no golden version".** The proof set was never frozen. Run `build-regression-set`
   for this failure, then call `run_verification` again with `dataset_id` set to it.
 

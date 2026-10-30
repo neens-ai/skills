@@ -5,7 +5,8 @@ description: >
   traces, and check it against the user's own verdicts before it scores anything automatically or
   gates a release. Use when a failure mode needs an automated check, when the user asks for a
   judge, scorer or evaluator, or when a judge's verdicts are in doubt. Do NOT use for failures a
-  plain filter already catches (errors, a missing tool call); see Step 2.
+  plain filter already catches (errors, timeouts), or for ones a rule decides (a schema, a
+  required tool call, a pattern, a threshold); those go to `write-code-judge`. See Step 2.
 ---
 
 # Write Judge
@@ -26,15 +27,19 @@ It does not switch the judge on for every trace until it has passed that check.
 Call `list_judges` with a `q` naming the failure. If a judge already targets it, go to Step 5 and
 check that judge instead of writing a duplicate.
 
-## Step 2: Is a judge the right tool?
+## Step 2: Is an LLM judge the right tool?
 
-Neens already records trace status, errors, tool calls and latency. If the failure is mechanical,
-such as a tool returning an error, a required tool never being called, or a timeout,
-`list_traces` filters (`status`, `tool_name`, `min_duration_ms`) already measure it exactly, and an
-LLM judge only adds cost and noise. Say so and stop.
+Pick the cheapest check that decides the failure exactly:
 
-Write a judge when catching the failure takes judgment: an answer not supported by the tool
-results, the wrong action for the request, a missed policy step, the wrong tone for the context.
+- **A filter.** Neens already records trace status, errors, tool calls and latency. A tool
+  returning an error or a timeout is measured exactly by `list_traces` filters (`status`,
+  `tool_name`, `min_duration_ms`). An LLM judge only adds cost and noise. Say so and stop.
+- **A rule.** The output must parse as JSON or match a schema, a tool must be called (or called
+  with certain arguments) whenever a condition holds, a pattern must never appear, a count must
+  stay under a limit. Two people reading the trace could not disagree. Load `write-code-judge`:
+  a Python judge decides it the same way every time, with no model call.
+- **Judgment.** An answer not supported by the tool results, the wrong action for the request, a
+  missed policy step, the wrong tone for the context. Write an LLM judge with this skill.
 
 ## Step 3: Write the prompt
 
@@ -72,8 +77,9 @@ Return only JSON: {"reason": "<critique>", "score": <1 for PASS, 0 for FAIL>}
    Keep it manual until Step 6.
 3. `run_eval` with `{"judge_id": …, "sample_size": 30}`. It scores the 30 most recent eligible
    traces. If the reply is not terminal yet, poll `get_eval_run` until it is.
-4. `get_eval_run` with `{"run_id": …, "limit": 50}`. Count the verdicts yourself: `score` 1 is a
-   pass and `score` 0 is a fail.
+4. `get_eval_run` with `{"run_id": …, "limit": 50}`. Each task's `score` 1 is a pass and 0 a
+   fail; `passed`, `failed` and `passRate` are those verdicts over `scored`. `errored` tasks were
+   never judged: name how many.
 
 `successRate` in the run is the share of tasks that finished scoring. It is not the pass rate.
 Never report it as one.
@@ -99,8 +105,13 @@ check the judge. Say so and ask the user whether to run a larger `sample_size`.
 3. Ask for pass or fail on this one criterion, for example "1 pass, 2 fail, 3 pass …".
 4. Record each answer with `add_annotation`:
    `{"target_type": "trace", "target_id": …, "verdict": "pass"|"fail", "critique": "<their reason, if given>", "is_gold": true}`.
-   Neens also uses these labels in its own judge-alignment view.
-5. Report both sides with counts, not only percentages:
+5. Call `list_judge_disagreements` with `{"judge_id": …}`. Neens compares the judge's scores with
+   the gold labels live and returns `falseAlarms`, `misses` and each disagreeing trace with the
+   judge's reason next to the user's critique. If a labeled trace was never scored by this judge,
+   score it first with `run_eval` and `{"judge_id": …, "target_ids": [<the labeled trace ids>]}`.
+   `get_judge_alignment` adds precision, recall and Cohen's kappa (`nGold` is how many labels it
+   compared) once Neens has measured them; until then its reply says no measurement exists yet.
+6. Report both sides with counts, not only percentages:
    - **False alarms**: of the N traces the judge failed, how many the user passed.
    - **Misses**: of the M traces the judge passed, how many the user failed.
 
@@ -109,15 +120,25 @@ one disagreement moves the rate by 10 points, so present the counts next to the 
 
 ## Step 6: Iterate or ship
 
-**It misses the bar.** Read every disagreement with the user. A false alarm means FAIL is defined
-too broadly; a miss means PASS is too lenient or an example is misleading. Change the definitions or
-the examples, not the output format. MCP cannot add a version to an existing judge, so create
-`<name>-v2` with `create_judge` and repeat Steps 4 and 5 on fresh traces. Ask the user to disable
-the old deployment in the Neens UI (**Judges**) so the two do not both score.
+**It misses the bar.** Read every disagreement from `list_judge_disagreements` with the user. A
+false alarm means FAIL is defined too broadly; a miss means PASS is too lenient or an example is
+misleading. Change the definitions or the examples, not the output format. Then:
+
+1. `create_judge_version` with `{"judge_id": …, "prompt_template": "<new prompt>", "note": "<what changed and why>"}`.
+   Everything you do not name carries over. The reply's `versionId` is the new version, and
+   `deploymentsOnOlderVersions` lists the deployments still scoring with the old one.
+2. `deploy_judge` with `{"judge_id": …, "version_id": "<versionId>", "trigger_policy": "manual", "success_threshold": 0.5}`.
+3. Repeat Steps 4 and 5 on fresh traces. Pass the new deployment's id as `deployment_id` to
+   `run_eval`: with two deployments enabled, `judge_id` alone is refused as ambiguous.
+4. When the new version holds, `disable_deployment` with the old deployment's id so the two do not
+   both score. Its scores and run history are kept. `get_judge_runs` lists every run of the judge
+   if you need an earlier run id.
 
 **It meets the bar.** Ask the user before making it continuous: every new trace becomes one judge
 call, and that costs money. On a yes, call `deploy_judge` with
-`{"judge_id": …, "trigger_policy": "on_new_trace", "success_threshold": 0.5}`.
+`{"judge_id": …, "trigger_policy": "on_new_trace", "success_threshold": 0.5}`. Each deployment in
+`list_judges` shows its `dailyCap`, the most traces it scores per UTC day. A project admin can
+change the project's cap with `set_scoring_budget`; a project API key can only read it.
 
 ## Report
 

@@ -17,8 +17,18 @@ model sweep and reports it with the uncertainty left in.
 ## Step 1: Set up the arms
 
 A sweep compares **agent endpoints**. Each arm is the user's agent configured to use one model,
-registered in Neens as an agent endpoint (**Settings → LLM providers → Agent endpoints**).
-Ask the user for each arm's label, for example `gpt-4.1-mini`, and its `agent_connection_id`.
+registered in Neens as an agent endpoint. Call `list_agent_endpoints` (its `model` field shows
+which model each one sends) and reuse the matching ones; their `id` is the arm's
+`agent_connection_id`. For a model with no endpoint yet, ask the user for the URL and call
+`register_agent_endpoint` with a `name`, the `base_url`, the `request_shape` and, for an
+`openai_chat` endpoint, the `model` it should send. Give each arm a label, for example
+`gpt-4.1-mini`.
+
+If the agent has no URL Neens can reach (a local or CI agent), give `start_model_sweep` runner arms instead:
+`{"label": …, "model": …, "runner_mode": "runner"}`. Neens never calls in; the user runs
+`neens sweep run --sweep-id <id> -- <agent command>` from the `neens-eval` CLI, which runs the agent
+once per arm, repeat and item with `NEENS_EVAL_MODEL` set to the arm's model. Never mix runner and
+endpoint arms in one sweep.
 
 - The first arm is the **incumbent**, the model in production today. It is the baseline.
 - Two arms on the same connection are the same model twice. Neens rejects that.
@@ -52,10 +62,8 @@ Poll `get_model_sweep` until the status is terminal. Partial results are normal:
 own status.
 
 If the launch reply never arrived, for example because the client timed out, do **not** launch
-again. Call `list_preprod_runs` and check whether the arm runs already exist. If they do, the
-sweep is running. Ask the user for its id from the Neens UI (**Model sweeps**), because only that
-id unlocks `get_model_sweep_comparison`. Per-run pass rates you work out yourself are not pass^k:
-say so if you report them before the proper comparison.
+again. Call `list_model_sweeps` with `q` set to the sweep's name. If it is listed, it is running:
+take its `id` and continue polling with `get_model_sweep`. Launch again only if it is not listed.
 
 ## Step 4: Decide
 

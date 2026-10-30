@@ -21,10 +21,15 @@ Get three things from the user or the repo:
 
 1. **Version label**: `<branch>@<short sha>`, or a release tag.
 2. **How Neens reaches it**, one of:
-   - **Push**: Neens calls the candidate's HTTP endpoint. It needs a registered agent endpoint:
-     an existing `agent_connection_id`, or one the user adds under **Settings → LLM providers →
-     Agent endpoints**. The endpoint takes `{"input": …}` and returns `{"output": …}`, or is
-     OpenAI-compatible.
+   - **Push**: Neens calls the candidate's HTTP endpoint. It needs a registered agent endpoint.
+     Call `list_agent_endpoints` (with `q` set to the service name or URL) and reuse a match: its
+     `id` is the `agent_connection_id`. If there is none, ask the user for the URL and register it
+     with `register_agent_endpoint`:
+     `{"name": "<agent>-<version label>", "base_url": "<preview url>", "request_shape": "input_json", "invoke_path": "/invoke"}`.
+     `input_json` posts `{"input": …}` and reads `{"output": …}`; `openai_chat` posts a
+     chat-completions body. Registering the same name and URL again updates it. A bearer token
+     goes in `auth_token`, is stored encrypted and is never returned. The URL must be reachable
+     from Neens: private and loopback addresses are refused unless the deployment allows them.
    - **Runner**: the user's own harness runs each golden input and sends the traces. Use this when
      the candidate cannot be exposed over HTTP. See Step 4.
 3. **The baseline**: the version it replaces. The best baseline is a pre-prod run of the current
@@ -41,7 +46,8 @@ Get three things from the user or the repo:
 2. `list_dataset_versions` on each. A dataset with no golden version cannot be replayed: freeze it
    with `create_golden_version`, or skip it and say that you skipped it.
 3. `list_judges`. Pass `judge_deployment_ids` explicitly: the checked judges for these failures
-   (from `write-judge`) plus the project's Primary Score deployment. Leave out judges nobody has
+   (LLM judges from `write-judge`, code judges from `write-code-judge`) plus the project's Primary
+   Score deployment. Leave out judges nobody has
    checked against a person, and say which ones you left out.
 
 ## Step 3: Create and start the run (push)
@@ -59,7 +65,9 @@ For each dataset:
 
 `create_preprod_run` with that, then `start_preprod_run` with the returned run id. Poll
 `list_preprod_runs` until the status is `completed`, `completed_with_regressions`, `failed` or
-`cancelled`.
+`cancelled`. A run created with the wrong dataset, endpoint or judges, or one left waiting for
+traces that will never come, is stopped with `cancel_preprod_run`; a finished run cannot be
+cancelled, so its result stands.
 
 If there is no baseline run and the incumbent version is reachable, create and start the same run
 for the incumbent first, with its own version label. That run is the baseline.

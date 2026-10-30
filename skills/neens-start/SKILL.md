@@ -110,14 +110,15 @@ the first row that matches the project's state.
 | No traces (`list_traces` total is 0), or the user wants to send traces | `instrument-agent` |
 | The user wants to know what is failing, the top inbox row is `needs_fix` or `downstream`, or there are failure modes nobody has reviewed | `triage-failures` |
 | A failure mode is confirmed and there is no dataset built from it | `build-regression-set` |
-| A failure mode needs an automated check, or a judge's verdicts are in doubt | `write-judge` |
+| A failure mode needs an automated check that takes judgment (grounding, the right action, tone), or a judge's verdicts are in doubt | `write-judge` |
+| A failure mode needs an automated check a rule can decide (output schema or format, a required tool call or its arguments, a forbidden pattern, a numeric limit), or the user asks for a code judge | `write-code-judge` |
 | The top inbox row is `fix_proposed`, there are open agent-fixable remediations, or the user wants to fix a failure | `fix-failure` |
 | The user is about to ship a change (branch, prompt, model, config) and wants a go/no-go | `gate-release` |
 | The user is choosing between models | `choose-model` |
 | The user wants a status report: "how are we doing", weekly review, exec summary | `reliability-review` |
 
 The usual order for a new project is `instrument-agent` → `triage-failures` →
-`build-regression-set` → `write-judge` → `fix-failure` → `gate-release`. A project with open
+`build-regression-set` → `write-judge` or `write-code-judge` → `fix-failure` → `gate-release`. A project with open
 remediations but no confirmed failure modes should still go through `triage-failures` first:
 fixing a failure nobody has looked at is how the wrong thing gets fixed.
 
