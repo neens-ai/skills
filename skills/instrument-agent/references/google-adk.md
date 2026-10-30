@@ -22,7 +22,7 @@ arrives twice. The guarded block below avoids that.
 Neens builds the question, the answer and the tool arguments from attributes **on the span**. It
 does not read span events or OTel log records. Check the version first: `pip show google-adk`.
 
-- **ADK 2.x** (checked on 2.13.0): built-in spans are `invoke_workflow`, `invoke_agent`,
+- **ADK 2.13 and later** (checked on 2.13.0): built-in spans are `invoke_workflow`, `invoke_agent`,
   `generate_content <model>` and `execute_tool <tool>`. With no extra settings they carry the
   model, the conversation id and the tool name, but **no messages and no tool arguments or
   results**. Neens then shows an empty question and answer. Set:
@@ -54,7 +54,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="https://app.neens.ai/v1/traces"   # f
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${NEENS_API_KEY}"
 export OTEL_SERVICE_NAME="weather-agent"                                      # agent name in Neens
 export OTEL_RESOURCE_ATTRIBUTES="neens.version_label=$(git rev-parse --short HEAD)"
-export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY          # Path A on ADK 2.x
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY          # Path A on ADK 2.13+
 ```
 
 Use the traces-only variable with the full path. The base-URL variable
@@ -172,7 +172,7 @@ On top of the Step 5 list:
 | Nothing from `adk web` | Variables are in `.env`, not the shell. Export them where the server starts. |
 | Nothing from `adk run` | Add the guarded block. |
 | Every span twice | Two exporters. Keep the guarded block, or drop the shell variables if you export in code. |
-| Empty input and output, ADK 2.x | Set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY`, or use Path B. |
+| Empty input and output, ADK 2.13+ | Set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY`, or use Path B. |
 | Empty input and output, tool args `{}`, older ADK | `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false` somewhere. Set it to `true`. |
 | `404 NOT_FOUND` from the model | Retired model id. See "Model id". |
 | Traces from before a Neens upgrade look wrong (JSON input, doubled tokens, extra turns) | Older traces are not re-processed. Send a new one. |
