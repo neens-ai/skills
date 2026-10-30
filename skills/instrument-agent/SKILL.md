@@ -40,19 +40,20 @@ Install the package, then make the instrument call once at startup, before the a
 | Strands Agents | `'strands-agents[otel]'` and `openinference-instrumentation-strands-agents` | `StrandsTelemetry().setup_otlp_exporter()`, then add `StrandsAgentsToOpenInferenceProcessor()` to its tracer provider |
 | AWS Bedrock AgentCore | the hosted framework's packages, plus `bedrock-agentcore` | the framework's own call, and turn off AgentCore's ADOT tracer (`DISABLE_ADOT_OBSERVABILITY=true`) |
 | Amazon Bedrock Agents | `openinference-instrumentation-bedrock` | `BedrockInstrumentor().instrument(tracer_provider=provider)`, before the boto3 client |
-| Vercel AI SDK (TypeScript) | `@opentelemetry/sdk-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/auto-instrumentations-node` | `experimental_telemetry: { isEnabled: true }` on each call |
+| Vercel AI SDK (TypeScript) | AI SDK 7: `@ai-sdk/otel`, `@opentelemetry/sdk-node`, `@opentelemetry/exporter-trace-otlp-http`. AI SDK 6: the two `@opentelemetry/*` packages | AI SDK 7: `registerTelemetry(new OpenTelemetry())` once at startup. AI SDK 6: `experimental_telemetry: { isEnabled: true }` on each call |
 | Plain OpenAI client | `openinference-instrumentation-openai` | `OpenAIInstrumentor().instrument()` |
 
 Python packages also need `opentelemetry-sdk opentelemetry-exporter-otlp` (ADK and Strands name
 their own exporter above). Read `references/frameworks.md` for the framework you picked: it has
 the import lines, how to set the conversation id, and the trap for that framework. The known traps:
 
-- **Google ADK**: on ADK 2.x the built-in spans carry no messages unless
+- **Google ADK**: on ADK 2.13 and later the built-in spans carry no messages unless
   `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY` is set, and `adk web` ignores
   `OTEL_*` variables in the agent's `.env`. Both are in `references/google-adk.md`.
 - **Strands and AgentCore** own the tracer provider. Skip the generic provider block below.
-- **Vercel AI SDK**: Neens does not read its `ai.*` prompt and response attributes, so check the
-  input and output in Step 5 and add them on the turn span (Step 4) if they are missing.
+- **Vercel AI SDK**: AI SDK 7 needs `@ai-sdk/otel` registered or it records no spans. AI SDK 6
+  puts the prompt and response only on `ai.*` attributes, which Neens does not read, so add them on
+  the turn span (Step 4).
 - **CrewAI** records no LLM calls without the LiteLLM (or provider) instrumentor.
 - **LangGraph**: the final reply must sit under a recognized key in the graph state (Step 4).
 

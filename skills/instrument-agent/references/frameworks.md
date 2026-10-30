@@ -196,30 +196,51 @@ whole `completion` stream: the orchestration steps arrive on it, and unread step
 
 ## Vercel AI SDK (TypeScript)
 
+Check the installed major version first (`npm ls ai`). The setup and what Neens can show differ.
+
+**AI SDK 7.** Spans come from the separate `@ai-sdk/otel` integration. Without it the SDK records
+no spans at all. Register it once at startup; no per-call flag is needed (`experimental_telemetry`
+is deprecated in 7):
+
 ```bash
-npm install @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http @opentelemetry/auto-instrumentations-node
-# Next.js: npm install @vercel/otel @opentelemetry/api
+npm install ai @ai-sdk/otel @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http
+# Next.js: npm install @vercel/otel @opentelemetry/api  (keep @ai-sdk/otel)
 ```
 
-Start the Node SDK before the AI SDK is imported (`node --import ./instrumentation.js app.js`), with
-`new OTLPTraceExporter()` reading `OTEL_EXPORTER_OTLP_*`, and call `sdk.shutdown()` on `SIGTERM`.
-In Next.js, `registerOTel({ serviceName })` from `@vercel/otel` in `instrumentation.ts`. Then turn
-telemetry on per call:
+```typescript
+// instrumentation.ts, loaded with: node --import ./instrumentation.js app.js
+import { NodeSDK } from '@opentelemetry/sdk-node'
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
+import { registerTelemetry } from 'ai'
+import { OpenTelemetry } from '@ai-sdk/otel'
+
+const sdk = new NodeSDK({ traceExporter: new OTLPTraceExporter() })  // reads OTEL_EXPORTER_OTLP_*
+sdk.start()
+registerTelemetry(new OpenTelemetry())
+process.on('SIGTERM', () => { sdk.shutdown().finally(() => process.exit(0)) })
+```
+
+In Next.js, call `registerOTel({ serviceName })` from `@vercel/otel` and then
+`registerTelemetry(new OpenTelemetry())` inside `register()` in `instrumentation.ts`. AI SDK 7
+emits `gen_ai.*` attributes, so Neens shows the model, tokens, the question and answer, and tool
+calls with arguments and results.
+
+**AI SDK 6.** Spans are built in and turned on per call:
+
+```bash
+npm install @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http
+```
 
 ```typescript
 await generateText({ model, prompt, experimental_telemetry: { isEnabled: true, functionId: 'summarize-ticket' } })
 ```
 
-Check the installed major version (`npm ls ai`). In AI SDK 7, the per-call flag only takes effect
-once a telemetry integration is registered: `npm install @ai-sdk/otel`, then
-`registerTelemetry(new OpenTelemetry())` (from `ai` and `@ai-sdk/otel`) at startup. That comes from
-the AI SDK package, not the Neens quickstart, so confirm it with a trace.
+AI SDK 6 puts the prompt and response only on its own `ai.*` attributes (`ai.prompt`,
+`ai.response.text`, `ai.toolCall.*`), which Neens does not read. Neens shows the model and tokens
+only, so add the wrapper span from SKILL.md Step 4 with the question and answer on it.
 
-Verify this one carefully. Neens reads the standard `gen_ai.*` model and token attributes. It does
-**not** read the SDK's own `ai.*` attributes (`ai.prompt`, `ai.response.text`, `ai.toolCall.*`).
-If `get_trace` shows the model but no input, output or tool calls, add the wrapper span from
-SKILL.md Step 4 with the question and answer on it. The SDK has no conversation-id hook Neens
-reads, so the wrapper span is also where `session.id` goes:
+**Both versions.** The SDK has no conversation-id hook Neens reads, so set `session.id` on a
+wrapper span around the turn:
 
 ```typescript
 import { trace } from '@opentelemetry/api'
@@ -229,10 +250,10 @@ await tracer.startActiveSpan('agent.turn', { attributes: {
   'session.id': conversationId,
   'neens.version_label': process.env.GIT_SHA ?? 'dev',
   'gen_ai.operation.name': 'invoke_agent',
-  'input.value': message,
+  'input.value': message,           // needed on AI SDK 6
 } }, async (span) => {
   try {
-    const { text } = await generateText({ model, prompt: message, experimental_telemetry: { isEnabled: true } })
+    const { text } = await generateText({ model, prompt: message })  // AI SDK 6: add experimental_telemetry
     span.setAttribute('output.value', text)
     return text
   } finally {
@@ -240,6 +261,9 @@ await tracer.startActiveSpan('agent.turn', { attributes: {
   }
 })
 ```
+
+On AI SDK 7, check the turn count and token totals in Step 5: one question can show up as two
+turns, and tokens can be counted twice. That is a known Neens ingest issue, not your setup.
 
 ## Plain OpenAI client
 
