@@ -85,6 +85,27 @@
   }
  },
  {
+  "name": "cancel_ambient_run",
+  "description": "Cancel a queued, running or waiting ambient run. It stops before its next step (a waiting run stops waiting) and is marked cancelled; a finished run cannot be cancelled.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "run_id": {
+     "type": "string",
+     "description": "The ambient run's id."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "run_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "cancel_preprod_run",
   "description": "Cancel a pre-prod run that is still awaiting traces or running. Terminal (a run that already completed/failed/cancelled) is refused rather than rewritten \u2014 cancelling is not a way to discard a result.",
   "inputSchema": {
@@ -98,6 +119,41 @@
    "additionalProperties": false,
    "required": [
     "run_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "check_judge_agreement",
+  "description": "Check an llm_prompt judge against reviewers' pass/fail verdicts WITHOUT deploying it: scores the judge on up to `limit` traces a person already labelled (newest first; optionally only members of dataset_id) and returns how many it agreed with, its false alarms (judge failed, reviewer passed) and misses (judge passed, reviewer failed), Cohen's kappa, and the disagreements. Stores nothing. Spends one model call per trace on the agent's LLM connection.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "judge_id": {
+     "type": "string",
+     "description": "Judge id (required)."
+    },
+    "version_id": {
+     "type": "string",
+     "description": "Judge version; omit for the current version."
+    },
+    "dataset_id": {
+     "type": "string",
+     "description": "Only traces in this dataset (id or name)."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 20,
+     "description": "Verdicts to check against (default 10, max 20)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "judge_id"
    ]
   },
   "annotations": {
@@ -134,6 +190,103 @@
   },
   "annotations": {
    "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "create_code_enrichment",
+  "description": "Create a CODE (custom_python) enrichment: Python that tags each trace with typed values (e.g. quotes_refund: boolean, refund_amount: number) that you can filter, chart and build datasets on. Test the code with test_code_enrichment BEFORE creating. The code is a top-level `def enrich(target)` or `def enrich(target, ctx)`; `target` is a dict of the required_data keys (input, output, messages, context, metadata). It returns a dict keyed by the output field keys, each value of that field's type (boolean \u2192 true/false, number, string, enum \u2192 one of its values, array \u2192 a list of scalars); a key that is not a declared field or a value of the wrong type fails the trace, and a field left out is simply not set. `ctx.skip(\"reason\")` skips a trace. It runs in the same isolated sandbox as code judges: NO network, nothing installable, no secrets, nothing persists between traces. Needs a plan with code enrichments (Gold). Saved as a draft that does not run until deploy_enrichment.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "description": "Enrichment name (required)."
+    },
+    "output_fields": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "key": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string",
+        "enum": [
+         "boolean",
+         "number",
+         "string",
+         "enum",
+         "array"
+        ]
+       },
+       "values": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "label": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "key",
+       "type"
+      ]
+     },
+     "description": "The values the code returns, e.g. [{\"key\": \"quotes_refund\", \"type\": \"boolean\"}, {\"key\": \"refund_amount\", \"type\": \"number\"}]. type is boolean | number | string | enum (with values) | array."
+    },
+    "target_type": {
+     "type": "string",
+     "enum": [
+      "trace",
+      "session"
+     ],
+     "description": "Default 'trace'."
+    },
+    "code": {
+     "type": "string",
+     "description": "The Python source (`def enrich(target, ctx)`)."
+    },
+    "limits": {
+     "type": "object",
+     "description": "custom_python: {\"timeout_s\": \u226430 (default 5), \"memory_mb\": \u22641024 (default 256)} per trace."
+    },
+    "runtime": {
+     "type": "string",
+     "description": "custom_python: runtime id to pin (default: the current one)."
+    },
+    "requirements": {
+     "type": "string",
+     "description": "custom_python: requirements.txt lines the runtime must already meet (nothing is installed), e.g. \"numpy>=2\"."
+    },
+    "capabilities": {
+     "type": "object",
+     "description": "custom_python: {\"llm\": true} to allow ctx.llm calls through the agent's LLM connection. Off by default."
+    },
+    "environment_id": {
+     "type": "string",
+     "description": "Optional: a code environment id (list_code_environments) whose extra packages the code imports."
+    },
+    "required_data": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Data to feed the code (input/output/messages/context/metadata; default input/output/messages/metadata)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "name",
+    "output_fields",
+    "code"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
    "destructiveHint": false
   }
  },
@@ -180,6 +333,62 @@
   }
  },
  {
+  "name": "create_enrichment_version",
+  "description": "Save a new version of a code (custom_python) enrichment \u2014 changed code, limits, runtime, requirements, capabilities, environment or required_data; everything you do not pass carries over from the current version (limits merge key by key). The new version becomes current at once: an enabled enrichment runs it from its next run. Test the change with test_code_enrichment first.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "enrichment_id": {
+     "type": "string",
+     "description": "Enrichment id (required)."
+    },
+    "note": {
+     "type": "string",
+     "description": "What changed (shown in history)."
+    },
+    "code": {
+     "type": "string",
+     "description": "The Python source (`def enrich(target, ctx)`)."
+    },
+    "limits": {
+     "type": "object",
+     "description": "custom_python: {\"timeout_s\": \u226430 (default 5), \"memory_mb\": \u22641024 (default 256)} per trace."
+    },
+    "runtime": {
+     "type": "string",
+     "description": "custom_python: runtime id to pin (default: the current one)."
+    },
+    "requirements": {
+     "type": "string",
+     "description": "custom_python: requirements.txt lines the runtime must already meet (nothing is installed), e.g. \"numpy>=2\"."
+    },
+    "capabilities": {
+     "type": "object",
+     "description": "custom_python: {\"llm\": true} to allow ctx.llm calls through the agent's LLM connection. Off by default."
+    },
+    "environment_id": {
+     "type": "string",
+     "description": "Optional: a code environment id (list_code_environments) whose extra packages the code imports."
+    },
+    "required_data": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Data to feed the code (input/output/messages/context/metadata; default input/output/messages/metadata)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "enrichment_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "create_golden_version",
   "description": "Snapshot a dataset's CURRENT items into a new immutable version and mark it golden (pass golden:false for a plain snapshot). One golden version per dataset \u2014 goldening a new one un-goldens the previous. This is the step between curating a dataset and running a pre-prod eval or a model sweep against it, both of which replay a frozen version so results stay comparable.",
   "inputSchema": {
@@ -214,7 +423,7 @@
  },
  {
   "name": "create_judge",
-  "description": "Create a judge (scorer) in the project. Default type llm_prompt: provide a prompt_template (use {target} for the trace/session), optional criteria, and required_data (input/output/messages/context/expected_output/metadata). Or type custom_python, a CODE judge, for a check that is a rule (a pattern, a schema, a word budget): provide code, and test it with test_code_judge BEFORE creating. The code is a top-level `def judge(target)` or `def judge(target, ctx)`; `target` is a dict of the required_data keys (output, input, messages, context, expected_output, metadata). It returns {\"score\": float} on the default 0\u20131 scale, or {\"label\": \u2026} when output_spec is binary/categorical (the shape MUST match output_spec, or every trace fails with an invalid return value); `ctx.skip(\"reason\")` skips a trace. The code runs in an isolated sandbox with NO network: external APIs, URLs and downloads all fail (requests imports but every call fails), nothing can be installed (only the runtime's packages), there are no secrets, and nothing persists between traces. The one way out is ctx.llm, with capabilities {\"llm\": true}. Needs a plan with code judges (Gold). list_code_runtimes lists the packages. Creates the judge + version 1 (experimental). Follow with deploy_judge then run_eval to score traces.",
+  "description": "Create a judge (scorer) in the project. Default type llm_prompt: provide a prompt_template (use {target} for the trace/session), optional criteria, and required_data (input/output/messages/context/expected_output/metadata). Or type custom_python, a CODE judge, for a check that is a rule (a pattern, a schema, a word budget): provide code, and test it with test_code_judge BEFORE creating. The code is a top-level `def judge(target)` or `def judge(target, ctx)`; `target` is a dict of the required_data keys (output, input, messages, context, expected_output, metadata). It returns {\"score\": float} on the default 0\u20131 scale, or {\"label\": \u2026} when output_spec is binary/categorical (the shape MUST match output_spec, or every trace fails with an invalid return value); `ctx.skip(\"reason\")` skips a trace. The code runs in an isolated sandbox with NO network: external APIs, URLs and downloads all fail (requests imports but every call fails), nothing can be installed (only the runtime's packages), there are no secrets, and nothing persists between traces. The one way out is ctx.llm, with capabilities {\"llm\": true}. Needs a plan with code judges (Gold). list_code_runtimes lists the packages; list_code_environments lists custom environments with more (pass environment_id). Or type composite, to combine existing judges (list_judges) into one score: provide components, and test it with test_code_judge type=composite. A composite combines judges that already exist in this project into one 0\u20131 score; each component's score arrives normalized to 0\u20131 (a binary judge's pass = 1.0, fail = 0.0). method weighted_sum (default) averages the components by weight; method expression computes a formula over component metric keys (the judge name lowercased, non-letters \u2192 _; min, max, abs, round and + - * / allowed), e.g. \"min(cites_sources, polite_tone)\" with threshold 1.0 passes only when BOTH pass; method custom_python runs code `def combine(components, ctx)` (components = {metric_key: 0\u20131 or None}) returning {\"score\": float}. A composite has no output_spec, prompt_template or criteria. Creates the judge + version 1 (experimental). Follow with deploy_judge then run_eval to score traces.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -226,9 +435,10 @@
      "type": "string",
      "enum": [
       "llm_prompt",
-      "custom_python"
+      "custom_python",
+      "composite"
      ],
-     "description": "Default 'llm_prompt'. 'custom_python' = a code judge."
+     "description": "Default 'llm_prompt'. 'custom_python' = a code judge; 'composite' = combines existing judges."
     },
     "scope": {
      "type": "string",
@@ -288,6 +498,57 @@
     "capabilities": {
      "type": "object",
      "description": "custom_python: {\"llm\": true} to allow ctx.llm calls through the agent's LLM connection. Off by default."
+    },
+    "environment_id": {
+     "type": "string",
+     "description": "custom_python: id of a ready custom code environment (list_code_environments) whose extra packages the code imports. It must belong to this agent or be shared across the company; the judge is pinned to its exact build."
+    },
+    "components": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "judge_id": {
+        "type": "string"
+       },
+       "weight": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "judge_id"
+      ]
+     },
+     "description": "composite only (required): the judges to combine, by id (list_judges) or exact name, each with an optional weight (default: equal)."
+    },
+    "method": {
+     "type": "string",
+     "enum": [
+      "weighted_sum",
+      "expression",
+      "custom_python"
+     ],
+     "description": "composite: how components combine (default weighted_sum)."
+    },
+    "expression": {
+     "type": "string",
+     "description": "composite method=expression: the formula over component metric keys, e.g. \"min(cites_sources, polite_tone)\"."
+    },
+    "threshold": {
+     "type": "number",
+     "description": "composite: the 0\u20131 score at or above which it passes (default 0.7)."
+    },
+    "min_components": {
+     "type": "integer",
+     "description": "composite: skip a trace with fewer scored components than this (default 1)."
+    },
+    "missing_policy": {
+     "type": "string",
+     "enum": [
+      "skip",
+      "fail"
+     ],
+     "description": "composite: a trace missing a component score is skipped (default) or failed."
     }
    },
    "additionalProperties": false,
@@ -302,7 +563,7 @@
  },
  {
   "name": "create_judge_version",
-  "description": "Add a new VERSION to an existing judge instead of creating a copy. Pass the judge id and what changes: for an llm_prompt judge prompt_template, criteria, output_spec and/or required_data; for a custom_python (code) judge code, output_spec, limits, requirements, capabilities, runtime and/or required_data (test new code with test_code_judge first). Every other setting carries over from the latest version. The new version becomes the judge's current version but existing deployments keep scoring with their version: follow with deploy_judge (the reply's versionId), run_eval, then disable_deployment on the old deployment. A project API key can only version judges that belong to its own project.",
+  "description": "Add a new VERSION to an existing judge instead of creating a copy. Pass the judge id and what changes: for an llm_prompt judge prompt_template, criteria, output_spec and/or required_data; for a custom_python (code) judge code, output_spec, limits, requirements, capabilities, runtime, environment_id and/or required_data (test new code with test_code_judge first). Every other setting carries over from the latest version. The new version becomes the judge's current version but existing deployments keep scoring with their version: follow with deploy_judge (the reply's versionId), run_eval, then disable_deployment on the old deployment. A project API key can only version judges that belong to its own project.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -348,6 +609,10 @@
     "capabilities": {
      "type": "object",
      "description": "custom_python: {\"llm\": true} to allow ctx.llm calls through the agent's LLM connection. Off by default."
+    },
+    "environment_id": {
+     "type": "string",
+     "description": "custom_python: id of a ready custom code environment (list_code_environments) whose extra packages the code imports. It must belong to this agent or be shared across the company; the judge is pinned to its exact build."
     },
     "note": {
      "type": "string",
@@ -448,6 +713,96 @@
   }
  },
  {
+  "name": "create_standing_instruction",
+  "description": "Give Scout a standing instruction on this agent, for yourself: text says what to do in your own words (\"Every Monday, review this agent and tell me what changed\"). Give EITHER cron + timezone (five cron fields, e.g. '0 9 * * 1' = Mondays 09:00; at most about once an hour) OR condition_kind (an event Scout reacts to: insight_opened, alert_fired, clustering_finished, efficacy_verdict, judge_alignment_drop, agent_version_seen, autonomy_suspended, action_reopened) with optional condition_target_id. slack=true also DMs results to you in Slack. once=true ends it after the first result. Results go only to you. There is a limit per person; over it this is refused and nothing is replaced. Undo with end_standing_instruction.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "text": {
+     "type": "string",
+     "maxLength": 1000,
+     "description": "What Scout should do, in your words."
+    },
+    "name": {
+     "type": "string",
+     "maxLength": 80,
+     "description": "A short label (default: the first line)."
+    },
+    "cron": {
+     "type": "string",
+     "description": "Five cron fields, e.g. '0 9 * * 1'."
+    },
+    "timezone": {
+     "type": "string",
+     "description": "IANA zone, e.g. 'Europe/Berlin' (UTC)."
+    },
+    "condition_kind": {
+     "type": "string",
+     "enum": [
+      "insight_opened",
+      "alert_fired",
+      "clustering_finished",
+      "efficacy_verdict",
+      "judge_alignment_drop",
+      "agent_version_seen",
+      "autonomy_suspended",
+      "action_reopened"
+     ],
+     "description": "Fire on this event instead of a schedule."
+    },
+    "condition_target_id": {
+     "type": "string",
+     "description": "Only events about this judge, fix, next action or agent version."
+    },
+    "slack": {
+     "type": "boolean",
+     "description": "Also DM results to you in Slack."
+    },
+    "once": {
+     "type": "boolean",
+     "description": "End after the first result."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "text"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "deploy_enrichment",
+  "description": "Turn a code (custom_python) enrichment on. trigger 'on_ingest' enriches newly ingested traces automatically (capped per day); 'manual' (default) enables it for runs started from the Neens app. Existing traces are not back-filled by this call.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "enrichment_id": {
+     "type": "string",
+     "description": "Enrichment id (required)."
+    },
+    "trigger": {
+     "type": "string",
+     "enum": [
+      "manual",
+      "on_ingest"
+     ],
+     "description": "Default 'manual'."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "enrichment_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "deploy_judge",
   "description": "Deploy (enable) a judge version so it can run. Only the judge id is required: OMIT version_id to deploy the judge's LATEST version, or pass either a version id (list_judges \u2192 versions[].id / latestVersionId, or create_judge's latestVersionId) or a version NUMBER like \"2\". Never guess a version id \u2014 if it cannot be resolved the tool answers with the judge's real version ids. Re-deploying a version already enabled with the same trigger AND pass cutoff returns the existing deployment instead of a duplicate; changing either is a real, separate deployment. trigger_policy 'manual' scores on demand; 'on_new_trace' scores every new trace. The reply carries resolvedVersionId and the deployment id run_eval needs.",
   "inputSchema": {
@@ -502,6 +857,26 @@
    "additionalProperties": false,
    "required": [
     "deployment_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "end_standing_instruction",
+  "description": "Stop one of your standing instructions for good: it never runs again and frees its place under your limit; past results stay readable. There is no undo \u2014 create a new one instead. (Deleting its text is done by you in Settings.)",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "instruction_id": {
+     "type": "string"
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "instruction_id"
    ]
   },
   "annotations": {
@@ -578,7 +953,7 @@
  },
  {
   "name": "get_action_inbox",
-  "description": "Start here when asked what to fix next or what changed. One call returns the Insights action inbox: what changed versus the previous window (new failures, regressions, anomalies, fixes ready for review, fixes that held), how many open items sit at each fix-loop stage (needs_fix, fix_proposed, in_pr, verified, downstream), and the ranked queue of issues (at most 20) with severity, sessions affected now vs before, growth, estimated wasted spend and where each fix stands. Each row carries the ids the next step needs: targetId (pass to get_failure_mode when targetType is cluster), fixSource (cluster_id / failure_mode_id for generate_remediation when stage is needs_fix) and remediationId (for get_remediation / update_remediation). Unlike list_failure_modes (the latest clustering run, unranked by impact) and list_open_remediations (fixes only), this ranks failures AND their fix status together. A null count means it could not be read, never zero. Scoped to this connection's project; a connection spanning several agents gets a failure with the same name on 2+ agents as ONE row with agentCount and children (act on each child's ids).",
+  "description": "Start here when asked what to fix next, what changed or how things are going. One call returns the Insights action inbox: lead (the page's three plain sentences: failure trend vs the previous window, the spend that went to failing runs or that spend isn't priced yet, and the top action with its recorded owner or none; quote them rather than recomputing), what changed versus the previous window (new failures, regressions, anomalies, fixes not yet applied, fixes that held), how many open items sit at each fix-loop stage (needs_fix, fix_proposed, in_pr, verified, downstream), and the ranked queue of issues (at most 20) with severity, sessions affected now vs before, growth, estimated wasted spend and where each fix stands. Each row carries the ids the next step needs: targetId (pass to get_failure_mode when targetType is cluster), fixSource (cluster_id / failure_mode_id for generate_remediation when stage is needs_fix) and remediationId (for get_remediation / update_remediation). Unlike list_failure_modes (the latest clustering run, unranked by impact) and list_open_remediations (fixes only), this ranks failures AND their fix status together. A null count means it could not be read, never zero. Scoped to this connection's project; a connection spanning several agents gets a failure with the same name on 2+ agents as ONE row with agentCount and children (act on each child's ids).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -619,8 +994,73 @@
   }
  },
  {
+  "name": "get_ambient_run",
+  "description": "One ambient run in full: what triggered it (with the ids of the events folded into it), the tools each turn called, and the finding \u2014 title, summary, confidence and the ids it cites \u2014 plus any plan it recommends for a person to approve. The finding is agent-written (author=agent), carries only links checked against what the run read, says whether it was translated (translation.status: source, translated or untranslated + reason), and recurrenceOf names the earlier run whose conclusion this one re-checked. wait is the job it is (or last was) waiting on: kind, id, status (waiting, resumed, expired, cancelled), the job's status and the deadline.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "run_id": {
+     "type": "string",
+     "description": "The ambient run's id."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "run_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_ambient_settings",
+  "description": "This agent's ambient-agent settings and guardrails: its level (off, suggest, investigate, act), the write tools it may run itself at act (actTools; empty by default) and every tool that can be allowed (actEligible), the investigation budget for the period with what is spent and reserved so far, the caps on runs per day and concurrent runs, the per-run ceilings, whether it is paused (the kill switch), the LLM connection investigations use, and any targets held after repeated failed runs (with their ids, for release_ambient_quarantine).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_ambient_signal_quality",
+  "description": "How useful people found each kind of next action on this agent over the last 30 days: per kind the useful and not-useful ratings, the useful rate (null when unrated), and whether the ranking demotes the kind or mutes it from the list. A kind moves only after enough ratings (minRatings). Ratings by AI agents and API keys are not counted.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_ambient_trace_project",
+  "description": "Whether the ambient agent's own traces go to this workspace's built-in agent project, and which project that is (projectId, set only when you can open it). With run_id, also the trace that ambient run sent there (sessionId + projectId): open it with get_trace under that project to see each model call and tool call the run made. A run whose trace was not sent (the project was off) or that you cannot open is not found.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "run_id": {
+     "type": "string",
+     "description": "Optional: an ambient run's id, to get its trace."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "get_business_kpis",
-  "description": "List the project's Business KPIs (a measure promoted to a committed target) with current value, whether the target is met, and the recent trend. Pass kpi_id to drill into one KPI, including the failure clusters eroding it. A null value reads targetStatus 'unknown' (never 'missed'). Use for 'how are our KPIs doing', 'are we hitting our targets', or 'what's dragging KPI X down'.",
+  "description": "List the project's Business KPIs (a measure promoted to a committed target) with current value, whether the target is met, and the trend. Pass kpi_id to drill into one KPI, including the failure clusters eroding it. A null value reads targetStatus 'unknown' (never 'missed'). A KPI with targetWindowDays is judged at that window whatever range you ask for; targetJudgedAt then names the window and its value, so say the verdict was judged at that window. trend compares the last 7 complete days with the 7 before, pooled, and carries both readings and both sample sizes; a null trend is UNKNOWN, not flat \u2014 say why from trendUnavailable (thin_sample means a week was too small; trendSamples has the counts). The list also returns lead \u2014 the page's one-sentence summary (money recovered or lost per month, and the KPI still off target); quote lead.sentences rather than recomputing \u2014 and drafts, KPIs configured but not yet committed. lead.recovered counts only fixes measured against a holdout (causal); lead.correlational is KPI movement beside fixes with no holdout: report it separately as not proven, never add the two. Use for 'how are our KPIs doing', 'are we hitting our targets', 'what target should we set', or 'what's dragging KPI X down'. lead.action 'set_targets' means lead.gaps.noTarget KPIs have a value but no target, so they read unknown; pass propose_targets=true to also get targetProposals \u2014 a target proposed per such KPI from its last 28 complete days. status 'proposed' carries proposedTarget (the baseline rounded to hold the current level); 'insufficient_history', 'no_value' and 'baseline_at_limit' carry none \u2014 say so, never invent one. A proposal is a suggestion: an admin confirms or edits it with Set targets on the Business KPIs page.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -631,6 +1071,10 @@
     "range": {
      "type": "string",
      "description": "Time window token, e.g. 7d / 30d (default the server default)."
+    },
+    "propose_targets": {
+     "type": "boolean",
+     "description": "List mode only: also return a proposed target for each active KPI that has none (read-only; nothing is saved)."
     }
    },
    "additionalProperties": false
@@ -780,7 +1224,7 @@
  },
  {
   "name": "get_failure_mode",
-  "description": "Fetch one failure cluster/mode by id: label, description, root cause, remediation summary, member session ids, and its distribution across agent versions (members per version vs that version's traffic, so a failure only one build produces stands out). Use after list_failure_modes to drill into a specific mode.",
+  "description": "Fetch one failure cluster/mode by id: label, description, root cause, remediation summary, up to 10 member session ids plus memberTotal (how many traces the mode holds \u2014 list_traces with cluster_id pages them all), and its distribution across agent versions (members per version vs that version's traffic, so a failure only one build produces stands out). Use after list_failure_modes to drill into a specific mode. fixabilityVerdict says whether a patch can fix the failure: `patchable` (a fix run verified a patch), `capability_limited` (a model sweep on the failure's golden set shows the current model below the bar while a stronger model clears it \u2014 recommend a model change via that sweep, do not start another fix run; Neens never switches models itself) or `unknown` (follow recommendation.action, e.g. run_model_sweep on recommendation.datasetId). `paths` groups the mode's recent sessions by how they fail (kind: retryLoop | retryOnce | recoveredRetry | recovered | stopsAtFailure | continuesAfter | noErrorStep | other), each with its count, the step it first fails at (and causeStep when that step received a tool's error), the retried step's run range, the most common error and example session ids for get_trace.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -911,7 +1355,7 @@
  },
  {
   "name": "get_model_sweep_comparison",
-  "description": "DECIDE a model sweep: the N-way comparison of its arms and the answer \u2014 which model to ship. Returns one verdict sentence plus a per-arm leaderboard (pass rate WITH its sample size n and a 95% confidence interval, pass^k greens/k, p95 latency, cost per case, regressions vs the declared baseline arm) and a verdict PER AGENT, because the answer legitimately differs by agent. Four rules to respect when reporting the result: (1) comparable=false means the sweep is VOID \u2014 its arms did not run under identical conditions, so never rank them, whatever their numbers say; (2) costPerCaseUsd=null means UNPRICED, never free \u2014 such an arm cannot win 'cheapest' and appears in verdict.excluded with reasonCode 'unpriced' ('partially_priced' when only some cases had a price \u2014 its figure is a floor); cost.noUsageCases / cost.unknownModelCases say why cases are unpriced when no model rate is missing (traces without token counts or a model name); latency avgMs/p95Ms=null means no measured duration, not 0 ms; (3) rate=null means no data, not 0%; (4) an item counts as passed only when it passed EVERY repeat run \u2014 2 of 3 is not a pass, and flakyItems counts the difference. Read-only: computes nothing new and spends nothing.",
+  "description": "DECIDE a model sweep: the N-way comparison of its arms and the answer \u2014 which model to ship. Returns one verdict sentence plus a per-arm leaderboard (pass rate WITH its sample size n and a 95% confidence interval, pass^k greens/k, p95 latency, cost per case, token-limit truncation rate over LLM calls that reported a finish reason, regressions vs the declared baseline arm) and a verdict PER AGENT, because the answer legitimately differs by agent. Four rules to respect when reporting the result: (1) comparable=false means the sweep is VOID \u2014 its arms did not run under identical conditions, so never rank them, whatever their numbers say; (2) costPerCaseUsd=null means UNPRICED, never free \u2014 such an arm cannot win 'cheapest' and appears in verdict.excluded with reasonCode 'unpriced' ('partially_priced' when only some cases had a price \u2014 its figure is a floor); cost.noUsageCases / cost.unknownModelCases say why cases are unpriced when no model rate is missing (traces without token counts or a model name); latency avgMs/p95Ms=null means no measured duration, not 0 ms; (3) rate=null means no data, not 0%; (4) an item counts as passed only when it passed EVERY repeat run \u2014 2 of 3 is not a pass, and flakyItems counts the difference. Read-only: computes nothing new and spends nothing.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -932,6 +1376,39 @@
    "required": [
     "sweep_id"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_next_actions",
+  "description": "What to do next on this agent: the ranked next best actions the person would see on the agent's card (a primary action and up to four more), already filtered to what this connection may see. Each action has id, kind, title, why (impact), target (targetType + targetId: a cluster is a failure mode for get_failure_mode), state, canRun (false means the caller lacks a capability in requires, or is an API key), and steps (the tools a run would call, or a link when it is done outside Neens). Pass action_id for one action in any state, including who ran, handed off or closed it. Org and company actions (scopeKind org or company) span agents: their parts list only the agents this connection can see, and their counts come from those parts. An action is rules-written; its finding (when present) is the ambient agent's own investigation of it \u2014 agent-written, with its runId for get_ambient_run. Use it for \"what should I do next?\"; use get_action_inbox for what changed and the fix-loop queue.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action_id": {
+     "type": "string",
+     "description": "One action's id (from a previous call). Omit for the list."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10,
+     "description": "Max actions (1\u201310, default 5)."
+    },
+    "scope": {
+     "type": "string",
+     "enum": [
+      "all",
+      "agent",
+      "rollups"
+     ],
+     "description": "all (default), agent (this agent only), or rollups (org and company actions only)."
+    }
+   },
+   "additionalProperties": false
   },
   "annotations": {
    "readOnlyHint": true,
@@ -1096,7 +1573,7 @@
  },
  {
   "name": "get_remediation",
-  "description": "Fetch one remediation by id with its simulations and what-changed correlation. The reply carries the grounded-flow evidence: failureLocus (where the failure lives), actionability (`actionable` = agent-fixable, `advisory` = a downstream/upstream service issue owned by owningComponent, not a prompt fix), groundingStatus (needs_grounding items are not yet concrete/confident), rootCauseSignature (the dedup key), fixability, and a likelyCause synthesized from the dominant error signature. Use to review a fix's evidence before accepting/applying it \u2014 and note that moving it to applied/verified requires a bound proof (see update_remediation).",
+  "description": "Fetch one remediation by id with its simulations and what-changed correlation. The reply carries the grounded-flow evidence: failureLocus (where the failure lives), actionability (`actionable` = agent-fixable, `advisory` = a downstream/upstream service issue owned by owningComponent, not a prompt fix), groundingStatus (needs_grounding items are not yet concrete/confident), rootCauseSignature (the dedup key), fixability, and a likelyCause synthesized from the dominant error signature. `status` is the fix's lifecycle (proposed\u2192accepted\u2192applied\u2192verified); `workState` is only the team's triage lane \u2014 never report a `done` workState as a shipped fix. Read groundingCaveats before acting: `evidence_disagreement` means the diagnosis and the agent's own evidence disagree, so the recommendation's mitigation claim is unverified. Use to review a fix's evidence before accepting/applying it \u2014 and note that moving it to applied/verified requires a bound proof: proofBound / proofReason / proofHint carry the server's own answer (a simulation alone is not a bound proof; see update_remediation). fixabilityVerdict says whether a patch can fix the failure: `patchable` (a fix run verified a patch), `capability_limited` (a model sweep on the failure's golden set shows the current model below the bar while a stronger model clears it \u2014 recommend a model change via that sweep, do not start another fix run; Neens never switches models itself) or `unknown` (follow recommendation.action, e.g. run_model_sweep on recommendation.datasetId).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1180,6 +1657,74 @@
   }
  },
  {
+  "name": "list_ambient_runs",
+  "description": "The ambient agent's run log for this agent, newest first: each investigation it ran on its own after an event (an alert, new insights, a finished clustering run, a fix's efficacy verdict, a judge drifting from reviewers, a new agent version). Each run has id, triggerKind, status (queued, running, waiting = paused until a long-running job ends, completed, failed, cancelled, skipped_no_connection = no LLM connection is configured, budget_refused = the agent's budget could not cover it, stopped = a guardrail ended it \u2014 reason wait_expired when the job it waited on outlived its 24 h / 72 h limit), reason, waitingOn (the job a waiting run waits for, with when the wait expires) and, when completed, the finding's title (agent-written, in the reader's language when it could be translated). Filter with status; include_memory adds what the agent remembers from earlier runs (its notes: conclusion, ids, date).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "status": {
+     "type": "string",
+     "enum": [
+      "queued",
+      "running",
+      "waiting",
+      "completed",
+      "failed",
+      "cancelled",
+      "skipped_no_connection",
+      "stopped",
+      "budget_refused"
+     ],
+     "description": "Only runs in this status."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 25,
+     "description": "Max runs (1\u201325, default 10)."
+    },
+    "include_memory": {
+     "type": "boolean",
+     "description": "Also return the agent's memory notes."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "list_assignable_users",
+  "description": "List the people a fix (remediation) can be assigned to: members of the company who can access its agent, as {id, name, role}. `name` is the display name, or for someone without one the part of their email before the @ (never a full address). Pass the returned `id` as update_remediation's assignee_id \u2014 e.g. for 'assign the top fix to Kenji', call this with q='Kenji', then update_remediation. Anyone not listed would be refused. Needs a signed-in person's credential (an agent API key cannot list people).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "remediation_id": {
+     "type": "string",
+     "description": "The fix's id (from list_remediations, get_remediation or get_action_inbox's remediationId)."
+    },
+    "q": {
+     "type": "string",
+     "description": "Only people whose name contains this text (case-insensitive)."
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max people (1\u201350, default 20)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "remediation_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "list_clusters",
   "description": "List the ACTIVE failure clusters from the latest clustering run \u2014 id, label, description, session count and L1 bucket. The id is what list_traces takes as `cluster_id` to get that cluster's exact traces. Use this rather than matching a cluster's name. (list_failure_modes is the richer hero view of the same run, with readiness and root-cause hypotheses.)",
   "inputSchema": {
@@ -1190,6 +1735,19 @@
      "description": "Max clusters (1\u201350, default 25)."
     }
    },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "list_code_environments",
+  "description": "List the custom code environments this project can use: extra Python packages, beyond a runtime's own, that code (custom_python) judges can import. Each has a status; only status ready (usable: true) can be passed as environment_id to test_code_judge, create_judge or create_judge_version.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
    "additionalProperties": false
   },
   "annotations": {
@@ -1250,6 +1808,69 @@
   }
  },
  {
+  "name": "list_enrichments",
+  "description": "List the enrichments in this project \u2014 per-trace tags/values computed by an LLM prompt, an external API or code \u2014 with each one's id, mode, status (draft / enabled), trigger (manual / on_ingest), output fields, latest run and, for a code (custom_python) enrichment, its current code. Use it to find an enrichment id for test_code_enrichment, create_enrichment_version or deploy_enrichment.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "description": "Name contains (case-insensitive)."
+    },
+    "mode": {
+     "type": "string",
+     "enum": [
+      "llm_prompt",
+      "external_api",
+      "custom_python"
+     ]
+    },
+    "status": {
+     "type": "string",
+     "enum": [
+      "draft",
+      "enabled"
+     ]
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max rows (default 20, max 50)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "list_eval_gates",
+  "description": "List the project's eval gates \u2014 the failure modes CI replays on every build \u2014 with ONE reconciled status each (`health`): `state` is the newest CI check (passed | failed | no_data | pending | error | never_in_ci); `warnings` may hold `stale` (an enforced gate CI has not checked for `staleAfterDays`) and `judge_misses_failure` (the evidence check passes at or above the threshold, so the judge passes the failure itself and a CI pass proves nothing), worded in `warningMessages`. `evidenceCatchRate` (1 \u2212 evidencePassRate; null = not checked yet) is the share of the gate's own past failures the judge catches \u2014 higher is better, like the CI pass rate. Also returns the newest CI build's single `summaryVerdict`. Filter by status (active | paused) or needs_attention.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "status": {
+     "type": "string",
+     "description": "active | paused."
+    },
+    "needs_attention": {
+     "type": "boolean",
+     "description": "Only gates whose status is a warning or a failure."
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max gates (1\u201350, default 20)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "list_failure_modes",
   "description": "Summarize the latest failure-clustering run: readiness, top failure modes (label, description, session counts, NEW flags, root-cause hypotheses). Use to understand what's failing before generating a remediation or a judge.",
   "inputSchema": {
@@ -1297,7 +1918,7 @@
  },
  {
   "name": "list_judges",
-  "description": "List the project's judges (scorers) with their versions and DEPLOYMENTS. Each deployment carries the `id` that run_eval and create_preprod_run need, plus its trigger, status and last run \u2014 so picking a judge to score with takes one call. Use before run_eval, or to find an existing judge instead of creating a duplicate. (list_scores is different: it reports how each METRIC is trending.)",
+  "description": "List the project's judges (scorers) with their versions and DEPLOYMENTS. Each deployment carries the `id` that run_eval and create_preprod_run need, plus its trigger, status and last run \u2014 so picking a judge to score with takes one call. Quality travels too: each deployment's lastResult (pass rate of its latest finished run) and each judge's agreement with human labels (Cohen's kappa from its newest measurement within the last agreement.windowDays days; low=true below the trust floor; null when not measured in that window). Use before run_eval, or to find an existing judge instead of creating a duplicate. (list_scores is different: it reports how each METRIC is trending.)",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1557,6 +2178,24 @@
   }
  },
  {
+  "name": "list_standing_instructions",
+  "description": "Your own standing instructions for Scout (the ambient agent) on this agent: each one's id, name, text, schedule (cron, time zone, next run) or condition (the event it waits for), status (active, paused, ended + why), last result and waitingOn (level = Scout is not set to investigate on this agent, paused, quarantined). Pass instruction_id to read one with its latest results (Scout's findings). Only the person who set an instruction can see it.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "instruction_id": {
+     "type": "string",
+     "description": "Read this one, with its latest results."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "list_traces",
   "description": "List/search agent traces (sessions) in the current project. Filter by status, agent, FAILURE CLUSTER (`cluster_id` \u2014 the exact membership set, from list_clusters / list_failure_modes), score metric/label/status, issue mode, failure set, model, tool name, tags, source, agent version, free text, time bounds, conversation, and duration/token ranges. Returns the total match count and up to `limit` summary rows. Use to find traces to inspect, annotate, or add to a dataset.",
   "inputSchema": {
@@ -1668,6 +2307,42 @@
   }
  },
  {
+  "name": "rate_next_action",
+  "description": "Rate one next action useful or not_useful (clear removes your rating), with an optional short note saying why. Use it after acting on, or deciding to skip, an action from get_next_actions. Only your own rating changes. A rating from an agent or an API key is stored as an agent rating: people see it, but it never changes how actions rank (counted is false).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action_id": {
+     "type": "string",
+     "description": "The action's id (from get_next_actions)."
+    },
+    "rating": {
+     "type": "string",
+     "enum": [
+      "useful",
+      "not_useful",
+      "clear"
+     ],
+     "description": "useful, not_useful, or clear to remove your rating."
+    },
+    "note": {
+     "type": "string",
+     "maxLength": 500,
+     "description": "Optional: why (a sentence)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "action_id",
+    "rating"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "record_fix_merge",
   "description": "Tell Neens a fix PR was MERGED so it can start a post-merge efficacy close-out: Neens stamps a deploy event + a close-out watch and, after the post-deploy window, measures the fixed failure mode's real production volume before vs after and auto-verifies (or flags a regression of) the remediation. remediation_id is required; pr_url/commit_sha default from the remediation, merged_at defaults to now.",
   "inputSchema": {
@@ -1764,6 +2439,27 @@
    "required": [
     "name",
     "base_url"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "release_ambient_quarantine",
+  "description": "Release a target the ambient agent stopped investigating after repeated failed runs (admin). Its next event starts a run again and its failure count restarts. Take the id from get_ambient_settings. There is no undo: if it keeps failing it is held again.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "quarantine_id": {
+     "type": "string",
+     "description": "The held target's id."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "quarantine_id"
    ]
   },
   "annotations": {
@@ -2254,18 +2950,125 @@
   }
  },
  {
-  "name": "test_code_judge",
-  "description": "Test-run custom_python (code) judge code on up to 3 of this project's traces in the sandbox WITHOUT saving anything. Pass code (and output_spec, matching what the code returns), or judge_id to test a saved code judge's current code \u2014 any code fields you pass override it. trace_ids picks the traces (list_traces); omit them to use recent ones. Each result carries the score/pass/label, printed stdout and, on failure, the error class + line. A trace id that is not in this project is reported in notInProject and never read. The code is a top-level `def judge(target)` or `def judge(target, ctx)`; `target` is a dict of the required_data keys (output, input, messages, context, expected_output, metadata). It returns {\"score\": float} on the default 0\u20131 scale, or {\"label\": \u2026} when output_spec is binary/categorical (the shape MUST match output_spec, or every trace fails with an invalid return value); `ctx.skip(\"reason\")` skips a trace. The code runs in an isolated sandbox with NO network: external APIs, URLs and downloads all fail (requests imports but every call fails), nothing can be installed (only the runtime's packages), there are no secrets, and nothing persists between traces. The one way out is ctx.llm, with capabilities {\"llm\": true}. Needs a plan with code judges (Gold).",
+  "name": "test_code_enrichment",
+  "description": "Test-run code (custom_python) enrichment code on up to 3 of this project's traces in the sandbox WITHOUT saving anything. Pass code + output_fields, or enrichment_id to test a saved code enrichment's current code (any code fields you pass override it). Each result carries the values the code returned per field, printed stdout and, on failure, the error class + line. A trace id that is not in this project is reported in notInProject and never read. The code is a top-level `def enrich(target)` or `def enrich(target, ctx)`; `target` is a dict of the required_data keys (input, output, messages, context, metadata). It returns a dict keyed by the output field keys, each value of that field's type (boolean \u2192 true/false, number, string, enum \u2192 one of its values, array \u2192 a list of scalars); a key that is not a declared field or a value of the wrong type fails the trace, and a field left out is simply not set. `ctx.skip(\"reason\")` skips a trace. It runs in the same isolated sandbox as code judges: NO network, nothing installable, no secrets, nothing persists between traces. Needs a plan with code enrichments (Gold).",
   "inputSchema": {
    "type": "object",
    "properties": {
+    "enrichment_id": {
+     "type": "string",
+     "description": "A saved code enrichment to test."
+    },
+    "output_fields": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "key": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string",
+        "enum": [
+         "boolean",
+         "number",
+         "string",
+         "enum",
+         "array"
+        ]
+       },
+       "values": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "label": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "key",
+       "type"
+      ]
+     },
+     "description": "The values the code returns, e.g. [{\"key\": \"quotes_refund\", \"type\": \"boolean\"}, {\"key\": \"refund_amount\", \"type\": \"number\"}]. type is boolean | number | string | enum (with values) | array."
+    },
+    "trace_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Up to 3 trace ids (list_traces); omit for recent ones."
+    },
+    "target_type": {
+     "type": "string",
+     "enum": [
+      "trace",
+      "session"
+     ],
+     "description": "Default 'trace'."
+    },
+    "code": {
+     "type": "string",
+     "description": "The Python source (`def enrich(target, ctx)`)."
+    },
+    "limits": {
+     "type": "object",
+     "description": "custom_python: {\"timeout_s\": \u226430 (default 5), \"memory_mb\": \u22641024 (default 256)} per trace."
+    },
+    "runtime": {
+     "type": "string",
+     "description": "custom_python: runtime id to pin (default: the current one)."
+    },
+    "requirements": {
+     "type": "string",
+     "description": "custom_python: requirements.txt lines the runtime must already meet (nothing is installed), e.g. \"numpy>=2\"."
+    },
+    "capabilities": {
+     "type": "object",
+     "description": "custom_python: {\"llm\": true} to allow ctx.llm calls through the agent's LLM connection. Off by default."
+    },
+    "environment_id": {
+     "type": "string",
+     "description": "Optional: a code environment id (list_code_environments) whose extra packages the code imports."
+    },
+    "required_data": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Data to feed the code (input/output/messages/context/metadata; default input/output/messages/metadata)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "test_code_judge",
+  "description": "Test-run custom_python (code) judge code on up to 3 of this project's traces in the sandbox WITHOUT saving anything. Pass code (and output_spec, matching what the code returns), or judge_id to test a saved code judge's current code \u2014 any code fields you pass override it. trace_ids picks the traces (list_traces); omit them to use recent ones. Each result carries the verdict (score, pass, and label: the label the code returned on a binary/categorical output_spec), traceLabel (the trace's display name), printed stdout and, on failure, the error class + line. environment_id (list_code_environments) adds a custom environment's packages. A trace id that is not in this project is reported in notInProject and never read. The code is a top-level `def judge(target)` or `def judge(target, ctx)`; `target` is a dict of the required_data keys (output, input, messages, context, expected_output, metadata). It returns {\"score\": float} on the default 0\u20131 scale, or {\"label\": \u2026} when output_spec is binary/categorical (the shape MUST match output_spec, or every trace fails with an invalid return value); `ctx.skip(\"reason\")` skips a trace. The code runs in an isolated sandbox with NO network: external APIs, URLs and downloads all fail (requests imports but every call fails), nothing can be installed (only the runtime's packages), there are no secrets, and nothing persists between traces. The one way out is ctx.llm, with capabilities {\"llm\": true}. Needs a plan with code judges (Gold). type=composite tests a composite instead (unsaved: components + method; or a saved composite's judge_id): weighted_sum/expression combine each trace's EXISTING component scores and run nothing; method custom_python runs combine().",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "type": "string",
+     "enum": [
+      "custom_python",
+      "composite"
+     ],
+     "description": "Default 'custom_python' (a code judge). 'composite' tests a composite judge."
+    },
     "code": {
      "type": "string",
      "description": "Python source to test (omit to use judge_id's code)."
     },
     "judge_id": {
      "type": "string",
-     "description": "A saved custom_python judge to test."
+     "description": "A saved custom_python (or composite) judge to test."
     },
     "trace_ids": {
      "type": "array",
@@ -2308,6 +3111,126 @@
     "capabilities": {
      "type": "object",
      "description": "custom_python: {\"llm\": true} to allow ctx.llm calls through the agent's LLM connection. Off by default."
+    },
+    "environment_id": {
+     "type": "string",
+     "description": "custom_python: id of a ready custom code environment (list_code_environments) whose extra packages the code imports. It must belong to this agent or be shared across the company; the judge is pinned to its exact build."
+    },
+    "components": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "judge_id": {
+        "type": "string"
+       },
+       "weight": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "judge_id"
+      ]
+     },
+     "description": "composite only (required): the judges to combine, by id (list_judges) or exact name, each with an optional weight (default: equal)."
+    },
+    "method": {
+     "type": "string",
+     "enum": [
+      "weighted_sum",
+      "expression",
+      "custom_python"
+     ],
+     "description": "composite: how components combine (default weighted_sum)."
+    },
+    "expression": {
+     "type": "string",
+     "description": "composite method=expression: the formula over component metric keys, e.g. \"min(cites_sources, polite_tone)\"."
+    },
+    "threshold": {
+     "type": "number",
+     "description": "composite: the 0\u20131 score at or above which it passes (default 0.7)."
+    },
+    "min_components": {
+     "type": "integer",
+     "description": "composite: skip a trace with fewer scored components than this (default 1)."
+    },
+    "missing_policy": {
+     "type": "string",
+     "enum": [
+      "skip",
+      "fail"
+     ],
+     "description": "composite: a trace missing a component score is skipped (default) or failed."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "update_ambient_settings",
+  "description": "Change this agent's ambient settings (admin). Send only what changes: level (off, suggest, investigate, act \u2014 act also lets it run the write tools in act_tools itself), act_tools (the full allowlist to store; [] allows none; only tools from actEligible: building a regression set, drafting a judge it never deploys, checking it against reviewers' verdicts, running an existing deployment), connection_id (the LLM connection investigations use; empty string = follow the assistant's), budget_usd + budget_period (day, week, month), max_runs_per_day, max_concurrent_runs, paused (true stops every investigation at its next step). To undo, call it again with the previous values from get_ambient_settings.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "level": {
+     "type": "string",
+     "enum": [
+      "off",
+      "suggest",
+      "investigate",
+      "act"
+     ],
+     "description": "The agent's ambient level."
+    },
+    "connection_id": {
+     "type": "string",
+     "description": "LLM connection id for investigations; empty string follows the assistant's connection."
+    },
+    "budget_usd": {
+     "type": "number",
+     "minimum": 0,
+     "description": "Most investigations may cost per period, in USD."
+    },
+    "budget_period": {
+     "type": "string",
+     "enum": [
+      "day",
+      "week",
+      "month"
+     ],
+     "description": "The budget's period (with budget_usd)."
+    },
+    "max_runs_per_day": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "max_concurrent_runs": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "paused": {
+     "type": "boolean",
+     "description": "true pauses every investigation (the kill switch)."
+    },
+    "act_tools": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "enum": [
+       "create_dataset",
+       "add_to_dataset",
+       "create_golden_version",
+       "create_judge",
+       "check_judge_agreement",
+       "run_eval"
+      ]
+     },
+     "description": "The whole write allowlist for the act level (replaces it)."
     }
    },
    "additionalProperties": false
@@ -2319,7 +3242,7 @@
  },
  {
   "name": "update_remediation",
-  "description": "Transition a remediation's lifecycle: `status` (proof lane: proposed|accepted|applied|verified|closed|regressed) and/or `work_state` (triage lane: todo|in_progress|done|archived) and/or `labels`. At least one required. Use to accept, progress, or archive a fix. Moving an ACTIONABLE fix to `applied` or `verified` now requires a bound proof \u2014 a verification run (run_verification) or a bound eval gate \u2014 or an explicit force override with a reason; without one the transition is refused. Advisory / working_as_intended items have no agent eval and settle as `closed` with an acknowledgement note instead. (Deleting remediations requires an admin over HTTP \u2014 not exposed here.)",
+  "description": "Transition a remediation's lifecycle: `status` (proof lane: proposed|accepted|applied|verified|closed|regressed) and/or `work_state` (triage lane: todo|in_progress|done|archived) and/or `labels` and/or `assignee_id`. At least one required. Use to accept, progress, assign, or archive a fix. Moving an ACTIONABLE fix to `applied` or `verified` now requires a bound proof \u2014 a verification run (run_verification) or a bound eval gate \u2014 or an explicit force override with a reason; without one the transition is refused. Check get_remediation's proofBound first (a simulation alone does not count). Advisory / working_as_intended items have no agent eval and settle as `closed` with an acknowledgement note instead. `assignee_id` sets the fix's owner \u2014 a user id who can access this agent (anyone else is refused) \u2014 or \"\" to clear it. (Deleting remediations requires an admin over HTTP \u2014 not exposed here.)",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2352,11 +3275,83 @@
      "items": {
       "type": "string"
      }
+    },
+    "assignee_id": {
+     "type": "string",
+     "description": "Assign the fix to this user id (an `id` from list_assignable_users \u2014 anyone else is refused), or \"\" to clear the assignee."
     }
    },
    "additionalProperties": false,
    "required": [
     "remediation_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "update_standing_instruction",
+  "description": "Change one of your standing instructions: paused (true stops it until resumed; false resumes it), text, name, cron + timezone, condition_kind (+ condition_target_id), slack, once. Send only what changes. To undo, call it again with the previous values from list_standing_instructions.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "instruction_id": {
+     "type": "string"
+    },
+    "text": {
+     "type": "string",
+     "maxLength": 1000,
+     "description": "What Scout should do, in your words."
+    },
+    "name": {
+     "type": "string",
+     "maxLength": 80,
+     "description": "A short label (default: the first line)."
+    },
+    "cron": {
+     "type": "string",
+     "description": "Five cron fields, e.g. '0 9 * * 1'."
+    },
+    "timezone": {
+     "type": "string",
+     "description": "IANA zone, e.g. 'Europe/Berlin' (UTC)."
+    },
+    "condition_kind": {
+     "type": "string",
+     "enum": [
+      "insight_opened",
+      "alert_fired",
+      "clustering_finished",
+      "efficacy_verdict",
+      "judge_alignment_drop",
+      "agent_version_seen",
+      "autonomy_suspended",
+      "action_reopened"
+     ],
+     "description": "Fire on this event instead of a schedule."
+    },
+    "condition_target_id": {
+     "type": "string",
+     "description": "Only events about this judge, fix, next action or agent version."
+    },
+    "slack": {
+     "type": "boolean",
+     "description": "Also DM results to you in Slack."
+    },
+    "once": {
+     "type": "boolean",
+     "description": "End after the first result."
+    },
+    "paused": {
+     "type": "boolean",
+     "description": "true pauses, false resumes."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "instruction_id"
    ]
   },
   "annotations": {

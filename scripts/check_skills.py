@@ -38,8 +38,8 @@ SNAPSHOT = ROOT / "scripts" / "tools.snapshot.json"
 TOOL_SHAPED = re.compile(r"`([a-z]+(?:_[a-z0-9]+)+)`")
 JSON_OBJECT = re.compile(r"\{[^{}]*\"[a-z_]+\"\s*:[^{}]*\}")
 JSON_KEY = re.compile(r"\"([a-z_]+)\"\s*:")
-# Keys that live inside nested argument values (e.g. a model-sweep arm), not at the top level.
-NESTED_KEYS = {"label", "agent_connection_id"}
+# Keys that live inside nested argument values (a model-sweep arm, an output_spec), not at the top level.
+NESTED_KEYS = {"label", "agent_connection_id", "pass_label", "fail_label"}
 
 
 def fetch_tools(url: str, token: str | None) -> list[dict]:
@@ -133,6 +133,11 @@ FIELDS = {
     "invalid_result", "user_exception", "turn_count",
     # standard OpenTelemetry / environment names used by instrument-agent
     "force_flush", "tracer_provider", "final_answer", "final_output",
+    # next-action kinds quoted from get_next_actions replies (start_fix_run is also a tool)
+    "connect_agent", "add_llm_connection", "resume_autonomy", "connect_repo",
+    "confirm_failure_mode", "build_regression_set", "write_judge", "review_disagreements",
+    "merge_fix_pr", "shared_failure", "uneven_coverage", "failing_connection", "unpriced_model",
+    "budget_near_limit",
     # an example tool name from the user's own agent
     "lookup_order",
 }

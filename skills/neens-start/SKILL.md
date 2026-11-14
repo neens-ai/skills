@@ -3,9 +3,9 @@ name: neens-start
 description: >
   Entry point for working with Neens. Use when the user asks for help with Neens, asks "where do I
   start", asks what is wrong with their agent without naming a task, or asks for something no other
-  Neens skill matches. It checks the Neens MCP connection, reads the project's action inbox (the
-  ranked failure→fix queue), and routes to the right skill. Do NOT use when a more specific Neens
-  skill already matches the request; load that skill directly.
+  Neens skill matches. It checks the Neens MCP connection, reads the agent's next best actions and
+  action inbox (the ranked failure→fix queue), and routes to the right skill. Do NOT use when a
+  more specific Neens skill already matches the request; load that skill directly.
 ---
 
 # Neens Start
@@ -36,12 +36,46 @@ Call `get_current_project`.
 - **Otherwise** say in one line which project and company you are connected to. Every later
   action is scoped to it.
 
-## Step 2: Read the loop
+## Step 2: Read the next actions
 
-Call `get_action_inbox` with `{"range": "7d"}`. One call returns the same ranked "what to do
+Call `get_next_actions` and `get_action_inbox` with `{"range": "7d"}` in parallel. Next actions
+decide the route; the inbox (below) says what changed. If `get_next_actions` does not exist on
+this server (Scout, the Neens background agent, is not turned on there) or returns an error, skip
+to the inbox.
+
+`get_next_actions` returns the ranked actions the agent's card shows, a primary one first. For
+each of the top three, show one line: `title`, `impact`, and whether it is yours to do:
+
+- **`steps`** lists the tools a run calls, or a `link` for work done in the Neens app. Route on the
+  `kind` with the table below; a `link` step is done by a person in Neens, so give the link.
+- **`canRun` false** means this connection lacks a capability in `requires` (or is an API key).
+  Say who can do it instead of trying.
+- **`finding`** is Scout's own investigation of the action, agent-written. Present it as Scout's,
+  with its `runId`, and confirm its claims from the traces before acting on them. `get_ambient_run`
+  with the `runId` shows what it read.
+- **`scopeKind`** `org` or `company` spans agents; `parts` names them. Work one agent at a time.
+
+| `kind` | Load |
+|---|---|
+| `connect_agent` | `instrument-agent` |
+| `confirm_failure_mode`, `shared_failure` | `triage-failures` |
+| `build_regression_set` | `build-regression-set` |
+| `write_judge`, `review_disagreements`, `uneven_coverage` | `write-judge` (or `write-code-judge` when a rule decides the failure) |
+| `start_fix_run` | `fix-failure` |
+| `merge_fix_pr` | none: a person merges. Offer `gate-release` first |
+| `add_llm_connection`, `connect_repo`, `resume_autonomy`, `failing_connection`, `unpriced_model`, `budget_near_limit` | none: a setting in Neens. Give the step's link and say what it unblocks |
+
+An unlisted `kind`: follow its `steps`. Do not rate an action unless the user asks; when they do,
+`rate_next_action` with their `rating` and `note`. A rating from an agent is shown but never
+changes the ranking.
+
+## Step 2b: Read the inbox
+
+`get_action_inbox` with `{"range": "7d"}` returns the same ranked "what to do
 next" queue the Insights page shows: what changed against the previous 7 days, how many open items
 sit at each fix-loop stage (`pipeline`), and the ranked rows (`issues`). This skill only reads the
-inbox. There is no tool to rate or dismiss a row, so do not offer to.
+inbox. There is no tool to rate or dismiss a row, so do not offer to. When Step 2 showed next
+actions, add only the `pipeline` line and rows they do not already cover.
 
 Read the reply:
 
@@ -102,8 +136,9 @@ one by sessions), open fixes, judges, datasets. Use the numbers the tools return
 
 ## Step 3: Route
 
-Pick the first row that matches what the user asked for. If they asked for nothing specific, pick
-the first row that matches the project's state.
+Pick the first row that matches what the user asked for. If they asked for nothing specific,
+route on the primary next action from Step 2; with no next actions, pick the first row that
+matches the project's state.
 
 | Situation | Load |
 |---|---|
@@ -116,6 +151,7 @@ the first row that matches the project's state.
 | The user is about to ship a change (branch, prompt, model, config) and wants a go/no-go | `gate-release` |
 | The user is choosing between models | `choose-model` |
 | The user wants a status report: "how are we doing", weekly review, exec summary | `reliability-review` |
+| The user asks what Scout found or did, wants to change what Scout may do, or wants a recurring check ("every Monday, tell me…") | `scout` |
 
 The usual order for a new project is `instrument-agent` → `triage-failures` →
 `build-regression-set` → `write-judge` or `write-code-judge` → `fix-failure` → `gate-release`. A project with open
