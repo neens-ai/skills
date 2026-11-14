@@ -714,7 +714,7 @@
  },
  {
   "name": "create_standing_instruction",
-  "description": "Give Scout a standing instruction on this agent, for yourself: text says what to do in your own words (\"Every Monday, review this agent and tell me what changed\"). Give EITHER cron + timezone (five cron fields, e.g. '0 9 * * 1' = Mondays 09:00; at most about once an hour) OR condition_kind (an event Scout reacts to: insight_opened, alert_fired, clustering_finished, efficacy_verdict, judge_alignment_drop, agent_version_seen, autonomy_suspended, action_reopened) with optional condition_target_id. slack=true also DMs results to you in Slack. once=true ends it after the first result. Results go only to you. There is a limit per person; over it this is refused and nothing is replaced. Undo with end_standing_instruction.",
+  "description": "Give Scout a standing instruction on this agent, for yourself: text says what to do in your own words (\"Every Monday, review this agent and tell me what changed\"). Give EITHER cron + timezone (five cron fields, e.g. '0 9 * * 1' = Mondays 09:00; at most about once an hour) OR condition_kind (an event Scout reacts to: insight_opened, alert_fired, clustering_finished, efficacy_verdict, judge_alignment_drop, agent_version_seen, autonomy_suspended, action_reopened) with optional condition_target_id. slack=true also DMs results to you in Slack. once=true ends it after the first result. Results go only to you. There is a limit per person; over it this is refused and nothing is replaced (pausing does not free a place; ending does). Undo with end_standing_instruction. No agent tool can delete an instruction: only the person can, in Settings.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -866,7 +866,7 @@
  },
  {
   "name": "end_standing_instruction",
-  "description": "Stop one of your standing instructions for good: it never runs again and frees its place under your limit; past results stay readable. There is no undo \u2014 create a new one instead. (Deleting its text is done by you in Settings.)",
+  "description": "Stop one of your standing instructions for good: it never runs again and frees its place under your limit; past results stay readable. There is no undo \u2014 create a new one instead. This is the furthest an agent can go: no agent tool can DELETE an instruction. If the person asks to delete one, end it and tell them deleting is done by them in Settings \u2192 Ambient autonomy.",
   "inputSchema": {
    "type": "object",
    "properties": {

@@ -17,18 +17,21 @@ finding is agent-written: it is a lead, not ground truth, and a plan it recommen
 person. Settings changes are admin-only and cost money, so propose them and wait for a yes.
 
 If `get_ambient_settings` does not exist on this server, Scout is not turned on there. Say so and
-stop.
+stop. A server can have Scout without the newer tools: if a tool named below (for example
+`create_standing_instruction`, or `act_tools` in `update_ambient_settings`) is missing, say that
+part is not available on this Neens yet and do the rest.
 
 ## Step 1: Read the settings
 
 Call `get_ambient_settings`. Report in one line each: the level, whether it is paused, the budget
 spent and reserved against the period's budget, and any held targets.
 
-- **Level** `off` does nothing; `suggest` (the default) ranks next actions but starts no
+- **Level** (only the values in `selectableLevels` can be set) `off` does nothing; `suggest` (the default) ranks next actions but starts no
   investigation; `investigate` investigates events and writes findings; `act` also runs the write
   tools listed in `actTools` itself, chosen from `actEligible`.
-- **Held targets** are ones Scout stopped after repeated failed runs. `release_ambient_quarantine`
-  with their `quarantine_id` starts them again; it has no undo.
+- **Held targets** (`quarantined`) are ones Scout stopped after repeated failed runs.
+  `release_ambient_quarantine` with a held target's `id` as `quarantine_id` starts it again; it
+  has no undo, and a target that keeps failing is held again.
 
 ## Step 2: Read what Scout found
 
@@ -40,12 +43,13 @@ ids it cites.
 - Before repeating a finding, open one or two cited traces with `get_trace` and check the claim.
   Say "Scout found…", never "Neens confirmed…".
 - `recurrenceOf` names the earlier run whose conclusion this one re-checked.
-- `skipped_no_connection` means no LLM connection (Settings → LLM providers); `budget_refused`
+- `waiting` means the run is paused until a long-running job it started ends (`waitingOn`).
+  `skipped_no_connection` means no LLM connection (Settings → LLM providers); `budget_refused`
   means the budget ran out; `stopped` means a guardrail ended the run.
 - `get_ambient_trace_project` with the `run_id` gives the run's own trace (`sessionId`,
   `projectId`) when its traces are sent; `get_trace` under that project shows every model and
   tool call.
-- `cancel_ambient_run` stops a queued or running run; ask first.
+- `cancel_ambient_run` stops a queued, running or waiting run; ask first.
 - `get_ambient_signal_quality` shows how useful people rated each kind of next action, and which
   kinds the ranking demotes or mutes.
 
@@ -76,8 +80,9 @@ event. Results go only to that person.
   wording and schedule with the user before creating it; there is a per-person limit.
 - `update_standing_instruction` with `instruction_id` and only what changes; `paused` stops or
   resumes it.
-- `end_standing_instruction` stops it for good and frees its place under the limit. There is no
-  undo, so ask first.
+- `end_standing_instruction` stops it for good and frees its place under the limit (pausing does
+  not). There is no undo, so ask first. No tool deletes an instruction; if the user asks to delete
+  one, end it and tell them deleting is done by them in Settings.
 
 ## Report
 

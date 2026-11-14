@@ -38,8 +38,8 @@ Call `get_current_project`.
 
 ## Step 2: Read the next actions
 
-Call `get_next_actions` and `get_action_inbox` with `{"range": "7d"}` in parallel. Next actions
-decide the route; the inbox (below) says what changed. If `get_next_actions` does not exist on
+Call `get_next_actions` (no arguments) and, in parallel, `get_action_inbox` with
+`{"range": "7d"}`. Next actions decide the route; the inbox (below) says what changed. If `get_next_actions` does not exist on
 this server (Scout, the Neens background agent, is not turned on there) or returns an error, skip
 to the inbox.
 

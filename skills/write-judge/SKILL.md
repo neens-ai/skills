@@ -73,15 +73,18 @@ Return only JSON: {"reason": "<critique>", "score": <1 for PASS, 0 for FAIL>}
 
 1. `create_judge` with `name` (for example `fm-<failure-slug>`), `description`, `prompt_template`,
    `required_data`, and `scope: "trace"`.
-2. **Check the draft against verdicts the user already gave**, before anything is deployed. Skip
-   this step if `check_judge_agreement` does not exist on this server or no verdicts exist yet.
-   Call it with `{"judge_id": …, "dataset_id": "<the failure's regression set>", "limit": 20}`.
+2. **Check the draft against verdicts the user already gave**, before anything is deployed. If
+   `check_judge_agreement` does not exist on this server, skip to item 3; Step 5 is then the
+   check. Call it with `{"judge_id": …, "dataset_id": "<the failure's regression set>", "limit": 20}`.
    The dataset keeps the check to traces labelled for this failure; without it, the newest labels
    in the agent may be about something else. It scores each labelled trace once (one model call
    each), stores nothing, and returns `agreed`, `falseAlarms`, `misses`, `kappa` and the
-   `disagreements` with the judge's reason. Ignore disagreements on traces used as prompt
-   examples. If it misses the bar in Step 5, revise now (Step 6, item 1) and check the new
-   `version_id` again; deploy only a draft that holds.
+   `disagreements` with the judge's reason. A reply with `humanVerdicts` 0 has nothing to check
+   against (no labelled traces in that set yet): say so and go on to item 3. Name any `errors`.
+   Ignore disagreements on traces used as prompt examples. With no regression set yet, omit
+   `dataset_id` only if every labelled trace in the agent is about this failure; otherwise skip
+   the check and rely on Step 5. If it misses the bar in Step 5, revise now (Step 6, item 1)
+   and check the new `version_id` again; deploy only a draft that holds.
 3. `deploy_judge` with `{"judge_id": …, "trigger_policy": "manual", "success_threshold": 0.5}`.
    Keep it manual until Step 6.
 4. `run_eval` with `{"judge_id": …, "sample_size": 30}`. It scores the 30 most recent eligible
@@ -137,9 +140,10 @@ misleading. Change the definitions or the examples, not the output format. Then:
    Everything you do not name carries over. The reply's `versionId` is the new version, and
    `deploymentsOnOlderVersions` lists the deployments still scoring with the old one.
 2. Where available, `check_judge_agreement` with `{"judge_id": …, "version_id": "<versionId>"}`
-   (and the same `dataset_id`) is the cheap first check of the new version.
+   (and the same `dataset_id`) is the cheap first check of the new version. If it still misses
+   the bar, go back to item 1; do not deploy it.
 3. `deploy_judge` with `{"judge_id": …, "version_id": "<versionId>", "trigger_policy": "manual", "success_threshold": 0.5}`.
-4. Repeat Steps 4 and 5 on fresh traces. Pass the new deployment's id as `deployment_id` to
+4. Repeat Step 4 items 4 and 5, then Step 5, on fresh traces. Pass the new deployment's id as `deployment_id` to
    `run_eval`: with two deployments enabled, `judge_id` alone is refused as ambiguous.
 5. When the new version holds, `disable_deployment` with the old deployment's id so the two do not
    both score. Its scores and run history are kept. `get_judge_runs` lists every run of the judge
