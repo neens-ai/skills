@@ -2,7 +2,7 @@
 name: instrument-agent
 description: >
   Send an agent's traces to Neens with standard OpenTelemetry, then prove they arrived and carry
-  what Neens needs (input, output, model, tool calls, conversation id, version). Use when a project
+  what Neens needs (input, output, model, tool calls, conversation id, version). Use when an agent
   has no traces, when the user asks to connect or instrument their agent, or when traces arrive
   but look empty. Do NOT use for analyzing traces that already flow; use `triage-failures`.
 ---

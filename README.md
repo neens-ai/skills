@@ -4,7 +4,7 @@ Skills that teach a coding agent (Claude Code, Codex, Cursor and any agent that 
 [Neens](https://neens.ai) failure-to-fix loop on your own agent: find what is failing, prove a
 fix, and make sure it cannot come back.
 
-Neens exposes the loop as an MCP server of 66 tools (as of Neens v0.28.0). The tools are the raw capability.
+Neens exposes the loop as an MCP server of more than 70 tools (as of Neens v0.32.1). The tools are the raw capability.
 These skills are the judgment about how to use them: which call comes first, what counts as
 evidence, what a number means, and when to stop and ask a person.
 
@@ -39,10 +39,10 @@ Every skill in this repo follows eight rules:
 | [build-regression-set](skills/build-regression-set/SKILL.md) | A failure is confirmed. Freezes its traces, plus passing controls, into a golden set. |
 | [write-judge](skills/write-judge/SKILL.md) | A failure needs an automated check that takes judgment. Writes a pass/fail LLM judge and measures it against you. |
 | [write-code-judge](skills/write-code-judge/SKILL.md) | A rule decides the failure (a schema, a required tool call, a pattern, a limit). Writes a sandboxed Python judge, tests it on real traces, and measures it against you. |
-| [fix-failure](skills/fix-failure/SKILL.md) | Time to fix. Implements the remediation in your repo, proves it, and reports PR and proof back. |
+| [fix-failure](skills/fix-failure/SKILL.md) | Time to fix. Implements the fix in your repo, proves it, and reports PR and proof back. |
 | [gate-release](skills/gate-release/SKILL.md) | "Can we ship this?" Replays every regression set against the candidate and returns GO, NO-GO or NO DATA. |
 | [choose-model](skills/choose-model/SKILL.md) | "Which model?" Runs a pass^k model sweep and reads it honestly. |
-| [reliability-review](skills/reliability-review/SKILL.md) | "How are we doing?" A one-page, evidence-backed status report. |
+| [reliability-review](skills/reliability-review/SKILL.md) | "How are we doing?" A one-page, evidence-backed status report: targets, failure modes, the fix loop with owners, and which failure modes have an eval gate. |
 
 `instrument-agent` covers Google ADK, AWS Bedrock AgentCore, Strands, LlamaIndex, Agno, smolagents,
 Pydantic AI, the Vercel AI SDK, LangGraph, the OpenAI Agents SDK, CrewAI and the Claude Agent SDK,
@@ -104,15 +104,15 @@ npx skills add https://github.com/neens-ai/skills --skill triage-failures   # ju
 ```text
 Where do I start with Neens?
 What's failing in my agent this week?
-Fix the top open Neens remediation and prove it against my preview deploy.
+Take the top open Neens fix and prove it against my preview deploy.
 Can we ship branch fix/refund-policy?
 ```
 
 ## Requirements
 
-- A Neens project with an MCP connection. Traces are needed for everything except
+- A Neens agent with an MCP connection. Traces are needed for everything except
   `instrument-agent`.
-- An LLM connection in Neens (**Settings → LLM providers**) for judges and remediations.
+- An LLM connection in Neens (**Settings → LLM providers**) for judges and fixes.
 - `write-code-judge` needs a plan that includes code judges, code execution turned on for your
   Neens deployment, and a signed-in MCP connection (a project API key cannot run code). The skill
   says what to do when any of these is missing.
@@ -127,7 +127,7 @@ from a multi-agent LangGraph support agent: real LLM calls, real injected tool f
 hand-written fixtures. A person answered every question the skills asked. Those runs:
 
 - **triage-failures:** found one cross-cutting failure that clustering had split across four
-  per-tool clusters (answers contradicting tool results), confirmed with the reviewer.
+  per-tool discovered failure modes (answers contradicting tool results), confirmed with the reviewer.
 - **build-regression-set:** froze it: 14 failures and 10 passing controls.
 - **write-judge:** twice refused to ship a judge that disagreed with the reviewer.
 - **write-code-judge:** run against a local Neens with the development sandbox runner, on traces

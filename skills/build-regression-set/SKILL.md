@@ -21,7 +21,7 @@ frozen so every later run is measured against the same thing.
 
 ## Step 1: Do not duplicate
 
-Call `list_datasets`. If a dataset was already built from this cluster (its `clusterId` matches)
+Call `list_datasets`. If a dataset was already built from this failure mode (its `clusterId` matches)
 or its name clearly covers this failure, extend it with `add_to_dataset` instead of creating a new
 one, then go to Step 5.
 
@@ -41,7 +41,7 @@ A fix that breaks what already worked is a regression, and a set made only of fa
 catch one. Add controls: traces from the same agent that go down the same path and succeed.
 
 Call `list_traces` with the same `agent_name` and, when the failure involves a tool, the same
-`tool_name`, plus `{"status": "ok"}`. If the project scores with `primary_score` (check
+`tool_name`, plus `{"status": "ok"}`. If the agent is scored with `primary_score` (check
 `list_scores`), also filter `{"score_metric": "primary_score", "score_status": "pass"}`. Open two or
 three with `get_trace` to make sure they really did succeed.
 
@@ -53,7 +53,7 @@ Add about one control for every two failures, and never fewer than five.
 
    ```json
    {"name": "<failure-slug>-regression",
-    "description": "Cluster <cluster_id>: <one-line failure>. <N> failures + <M> passing controls, <date>.",
+    "description": "Failure mode <cluster_id>: <one-line failure>. <N> failures + <M> passing controls, <date>.",
     "session_ids": ["…failures…", "…controls…"]}
    ```
 
@@ -61,7 +61,7 @@ Add about one control for every two failures, and never fewer than five.
 
    ```json
    {"dataset": "<dataset id>", "name": "v1",
-    "notes": "Frozen from cluster <cluster_id> on <date>: <N> failures, <M> controls."}
+    "notes": "Frozen from failure mode <cluster_id> on <date>: <N> failures, <M> controls."}
    ```
 
 Runs replay the frozen golden version, never the live items. That is what keeps a run next month
@@ -80,7 +80,7 @@ comparable to a run today.
 ## Report
 
 - Dataset name and id, golden version number, and how many failures and controls it holds
-- The cluster id it came from
+- The failure mode it came from, with its `cluster_id`
 - Whether a judge covers it, and which one
 - The next step: `write-judge` (or `write-code-judge` when a rule decides the failure) if no judge
   covers it, otherwise `fix-failure`

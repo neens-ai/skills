@@ -263,7 +263,7 @@ await tracer.startActiveSpan('agent.turn', { attributes: {
 ```
 
 On AI SDK 7, check the turn count and token totals in Step 5: one question can show up as two
-turns, and tokens can be counted twice. That is a known Neens ingest issue, not your setup.
+turns, and tokens can be counted twice. That is a known Neens ingest bug, not your setup.
 
 ## Plain OpenAI client
 

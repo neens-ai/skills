@@ -2,11 +2,11 @@
 name: gate-release
 description: >
   Decide whether a candidate agent version (a branch, a prompt change, a model or config change)
-  is safe to ship: replay the project's frozen golden and regression sets against it in a Neens
+  is safe to ship: replay the agent's frozen golden and regression sets against it in a Neens
   pre-prod run, compare it with the current version, explain every regression from the
   trajectories, and return GO, NO-GO or NO DATA with the evidence. Use when the user asks "can we
   ship this", wants a release gate or a CI check, or wants two candidates compared. Do NOT use to
-  prove one specific remediation; that is `fix-failure`.
+  prove one specific fix; that is `fix-failure`.
 ---
 
 # Gate Release
@@ -31,26 +31,48 @@ Get three things from the user or the repo:
      goes in `auth_token`, is stored encrypted and is never returned. The URL must be reachable
      from Neens: private and loopback addresses are refused unless the deployment allows them.
    - **Runner**: the user's own harness runs each golden input and sends the traces. Use this when
-     the candidate cannot be exposed over HTTP. See Step 4.
+     the candidate cannot be exposed over HTTP. See Step 5.
 3. **The baseline**: the version it replaces. The best baseline is a pre-prod run of the current
    production version on the same frozen set, because both sides then answer identical inputs.
    Use `list_preprod_runs` to find an existing one. The fallback is the production window
    (`baseline_kind: "prod_window"`), which is weaker because production traffic is not the golden
    set.
 
-## Step 2: Choose what to replay and who judges
+## Step 2: Check the eval gates
+
+An eval gate is a failure mode CI replays on every build. A green CI check is evidence only when
+the gate is current and its judge catches the failure. Read the gates before you replay anything.
+
+Call `list_eval_gates` with `{"needs_attention": true, "limit": 50}`. If the tool does not exist on
+this server, say so in the report and go on. For each gate returned, read `health`:
+
+- **`warnings` holds `stale`.** CI has not checked an enforced gate within `staleAfterDays`. Its
+  last pass says nothing about this candidate.
+- **`warnings` holds `judge_misses_failure`.** The gate's judge passes the very failure it guards
+  (`evidenceCatchRate` is the share of its own past failures it catches). A pass from that judge
+  proves nothing, in CI or in your replay.
+- **`state` is `failed` or `error`.** The newest CI check failed, or could not run. Report it; if
+  that build is the candidate, the replay must explain it.
+
+List every one in the report: the gate's failure mode, `state`, the warnings and their
+`warningMessages`. Never cite a stale or blind gate's CI pass as evidence for GO. Repairing a gate
+is the user's job, in the app: tighten its judge and run **Check evidence** again, or get CI
+checking it again. See https://app.neens.ai/docs/guides/eval-gates/.
+
+## Step 3: Choose what to replay and who judges
 
 1. `list_datasets`. Take every regression set built from a fixed failure (those with a
-   `clusterId`, or named `*-regression`) and the project's broad golden set, if it has one. Each
+   `clusterId`, or named `*-regression`) and the agent's broad golden set, if it has one. Each
    dataset gets its own run.
 2. `list_dataset_versions` on each. A dataset with no golden version cannot be replayed: freeze it
    with `create_golden_version`, or skip it and say that you skipped it.
 3. `list_judges`. Pass `judge_deployment_ids` explicitly: the checked judges for these failures
    (LLM judges from `write-judge`, code judges from `write-code-judge`) plus the project's Primary
    Score deployment. Leave out judges nobody has
-   checked against a person, and say which ones you left out.
+   checked against a person, and say which ones you left out. A judge on a gate flagged
+   `judge_misses_failure` in Step 2 counts as unchecked for that failure mode.
 
-## Step 3: Create and start the run (push)
+## Step 4: Create and start the run (push)
 
 For each dataset:
 
@@ -72,7 +94,7 @@ cancelled, so its result stands.
 If there is no baseline run and the incumbent version is reachable, create and start the same run
 for the incumbent first, with its own version label. That run is the baseline.
 
-## Step 4: Runner mode, when there is no endpoint
+## Step 5: Runner mode, when there is no endpoint
 
 1. `create_preprod_run` with `"runner_mode": "runner"` and no connection.
 2. `get_preprod_run_items` lists each frozen input with its `itemId`.
@@ -80,9 +102,9 @@ for the incumbent first, with its own version label. That run is the baseline.
    with the item's input, inside a span carrying three attributes:
    `neens.eval_run_id` (the run id), `neens.dataset_item_id` (the `itemId`) and
    `neens.version_label`. Traces go to Neens through the normal exporter (see `instrument-agent`).
-4. `start_preprod_run` moves the run to `running`. Run the script, then poll as in Step 3.
+4. `start_preprod_run` moves the run to `running`. Run the script, then poll as in Step 4.
 
-## Step 5: Read the result
+## Step 6: Read the result
 
 For each run:
 
@@ -111,7 +133,7 @@ Rules for reading the numbers:
 - **Run pre-prod runs one at a time** when they share a small self-hosted database, and re-run a
   run that failed with nothing captured before reading anything into it.
 
-## Step 6: Verdict
+## Step 7: Verdict
 
 - **GO**: every run met its gate, with zero regressions, and at least 90% of items were captured.
 - **NO-GO**: any regression, or any run under its gate. List each regression with its one-line
@@ -119,12 +141,19 @@ Rules for reading the numbers:
 - **NO DATA**: a run failed, or nothing was scored or captured. That is an infrastructure problem:
   fix the endpoint, the judges or the harness, and run again. It is not a verdict on the change.
 
-Report a table with one row per dataset: dataset, items scored/total, pass rate (candidate vs
-baseline), regressions, new passes, and cost and p95 latency deltas. Then the verdict, then the
-regression explanations.
+Stale and blind gates from Step 2 do not block GO by themselves: the replay is the evidence, and a
+stale gate's judge can still score the replay. But a failure mode whose only judge is one flagged
+`judge_misses_failure` has no evidence: it is NO DATA for that failure mode, and the verdict cannot
+be GO until it has a judge that catches it. Say which failure mode it is. A regression elsewhere
+still makes it NO-GO.
 
-Do not relax a gate to turn NO-GO into GO. That call belongs to the user, and the report must say
-it was made.
+Report a table with one row per dataset: dataset, items scored/total, pass rate (candidate vs
+baseline), regressions, new passes, and cost and p95 latency deltas. Then the gates from Step 2,
+then the verdict, with its reasoning naming any gate it could not count, then the regression
+explanations.
+
+Do not relax `min_pass_rate` or `max_regressions` to turn NO-GO into GO. That call belongs to
+the user, and the report must say it was made.
 
 ## Comparing several candidates
 

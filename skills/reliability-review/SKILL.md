@@ -27,9 +27,11 @@ the nearest one and say which you used.
 | `list_scores` with `{"range": "7d"}` | Quality: each metric's pass rate, scored count, and change versus the previous window |
 | `list_preprod_runs` with `{"limit": 5}` | Recent release gates and their outcomes |
 | `list_traces` with `{"started_after": "<window start>", "limit": 1}` | Volume: `total` traces in the window |
+| `list_failure_modes` | Gate coverage: each failure mode's `gate` (`gateId` null means no gate guards it) |
+| `list_eval_gates` with `{"needs_attention": true}` | Gates that are failing, stale, or whose judge passes the very failure it guards |
 
 For each KPI that is `missed` or has a `regressed` trend, call `get_business_kpis` with its `kpi_id`
-to see which failure clusters are eroding it. For a quality metric that dropped, `list_score_rows`
+to see which failure modes are eroding it. For a quality metric that dropped, `list_score_rows`
 with `{"metric_key": "<metric>", "status": "fail", "range": "7d", "limit": 5}` returns the traces it
 failed, with the judge's reason, so the line in the report can cite them.
 
@@ -37,9 +39,9 @@ The inbox is read-only here. There is no tool to rate or dismiss a row, so do no
 
 **If `get_action_inbox` does not exist on this server** (an unknown-tool error, or it is missing
 from the tool list) or returns an error, gather the failure and fix sections the older way instead:
-`list_failure_modes` (top modes by sessions, and new modes), `list_remediations` (the `stats`
-rollup by status, work state and actionability) and `list_open_remediations` with `{"limit": 5}`.
-Say in the report that the inbox was unavailable.
+`list_failure_modes` (top modes by sessions, and new modes), `list_remediations` (the fixes, which
+the API calls remediations, with the `stats` rollup by status, work state and actionability) and
+`list_open_remediations` with `{"limit": 5}`. Say in the report that the inbox was unavailable.
 
 ### Read the inbox by stage
 
@@ -49,17 +51,17 @@ stage for the whole inbox; `issues` holds only the top-ranked rows (at most 20),
 
 | `stage` | Means | Drill in with |
 |---|---|---|
-| `needs_fix` | No fix yet. A row that also has a `remediationId` is a fix that **regressed**: it shipped and the failure came back | `get_failure_mode` (cluster rows), `get_remediation` (if `remediationId`) |
+| `needs_fix` | No fix yet. A row that also has a `remediationId` is a fix that **regressed**: it shipped and the failure came back | `get_failure_mode` (discovered failure mode rows), `get_remediation` (if `remediationId`) |
 | `fix_proposed` | A fix is ready for someone to review and implement | `get_remediation` with `remediationId` |
 | `in_pr` | A PR is open (`prUrl`), or the fix is merged and Neens is watching whether it holds | `get_remediation` with `remediationId` |
 | `verified` | The fix held after merge, or was proven by an evaluation | `get_remediation` with `remediationId` |
 | `downstream` | A service outside the agent owns it; no prompt change fixes it | `get_remediation` for the owning service |
 
-`targetType` says what a row is. For `cluster`, `targetId` is the cluster id for
-`get_failure_mode` and `get_cluster_exemplars`. For `issue`, the row is a named failure mode: read
-its traces with `list_traces` and `issue_mode` set to the row's `label`. For `regression`, the row
-is a quality score that dropped; read it next to `list_scores`, and cite the row's `cause` as the
-detector's summary, not as a verified finding.
+`targetType` says what a row is. For `cluster`, the row is a discovered failure mode and `targetId`
+is its id for `get_failure_mode` and `get_cluster_exemplars`. For `issue`, the row is a tracked
+failure mode: read its traces with `list_traces` and `issue_mode` set to the row's `label`. For
+`regression`, the row is a quality score that dropped; read it next to `list_scores`, and cite
+the row's `cause` as the detector's summary, not as a verified finding.
 
 A row with `children` groups the same failure across several agents. Report the parent once, with
 each child's agent and its own `stage` on a sub-line; a child can be further along the loop than
@@ -71,7 +73,7 @@ the window. If `list_traces` returned `total` 0, the headline is "no traffic in 
 Quality sections: an empty inbox does not mean every KPI is met.
 
 The inbox needs no LLM connection; it is computed from traces. Without one, a row's `cause` can
-be null, and remediations may come from a simpler fallback. Report what is there, and if any call
+be null, and fixes may come from a simpler fallback. Report what is there, and if any call
 says no LLM connection is configured, add an ask to set one up under **Settings → LLM providers**.
 
 ## Step 2: Read it honestly
@@ -101,7 +103,7 @@ says no LLM connection is configured, add an ask to set one up under **Settings 
 ## Step 3: Write the page
 
 ```markdown
-# <Agent / project> reliability, <window>
+# <Agent> reliability, <window>
 
 **Headline:** <one sentence: the single most important thing, with its number>
 
@@ -119,15 +121,30 @@ says no LLM connection is configured, add an ask to set one up under **Settings 
 ## Fix loop
 <pipeline counts: needs fix / fix ready to review / in PR / verified / downstream>
 <needs fix: top 3 by rank, each with what goes wrong, sessions now (before), new?, reviewed?>
-<regressed fixes, always, with remediation id>
-<fix ready to review and in PR: top 1-2 each, with remediation id and PR link>
+<regressed fixes, always, with fix id>
+<fix ready to review and in PR: top 1-2 each, with fix id, owner and PR link>
 <verified this window; downstream items with their owning service>
+<gates: which of the top failure modes have no gate; gates needing attention, each with its sample size>
 
 ## Asks
 <at most 3 decisions or actions for the reader, each naming an owner>
 ```
 
-Keep it to one screen. Put detail in the trace, run and remediation ids, not in more prose.
+Keep it to one screen. Put detail in the trace, run and fix ids, not in more prose.
+
+**Owners.** A fix's `assignee` (from `get_remediation` or `list_remediations`; null = unassigned)
+names its owner. `hasAccess: false` means the owner can no longer reach this agent: flag it and
+suggest reassigning. Say nothing about access when `hasAccess` is null. To suggest or set an owner,
+call `list_assignable_users` with `remediation_id` (and `q` to match a name), then
+`update_remediation` with `assignee_id` set to the returned id. Never guess an id. Listing people
+needs a signed-in person's credential; an agent API key cannot, so name the owner as an ask instead.
+
+**Gate coverage.** For each top failure mode, say whether a gate guards it: a null `gate.gateId`
+on its `list_failure_modes` item means no gate. Creating one is the user's job in the app (the
+failure mode's card, **Create eval** → **Create eval gate**); no tool does it. From `list_eval_gates`,
+mention only gates whose `health` shows a failed check, a `stale` warning or a judge that misses its
+own failure (`warningMessages` words it). Quote `evidenceCatchRate` with its sample size when the
+reply gives one; null means the evidence was not checked yet, not zero.
 
 ## Step 4: Offer the next step
 
