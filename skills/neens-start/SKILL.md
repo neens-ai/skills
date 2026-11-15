@@ -11,7 +11,7 @@ description: >
 # Neens Start
 
 Confirm the connection, take a reading of the loop, and route to the skill that matches where the
-project stands. This skill holds only routing. The workflows live in the targeted skills.
+agent stands. This skill holds only routing. The workflows live in the targeted skills.
 
 Neens tools are called by their bare names here (`list_traces`). Your client may prefix them, for
 example `mcp__neens__list_traces` in Claude Code.
@@ -39,7 +39,7 @@ Call `get_current_project`.
 ## Step 2: Read the next actions
 
 Call `get_next_actions` (no arguments) and, in parallel, `get_action_inbox` with
-`{"range": "7d"}`. Next actions decide the route; the inbox (below) says what changed. If `get_next_actions` does not exist on
+`{"range": "7d"}` and `list_failure_modes`. Next actions decide the route; the inbox (below) says what changed. If `get_next_actions` does not exist on
 this server (Scout, the Neens background agent, is not turned on there) or returns an error, skip
 to the inbox.
 
@@ -91,15 +91,19 @@ Read the reply:
 - **`issues` is empty and `inboxTotal` is 0.** Before calling it all clear, call `list_traces`
   with `{"limit": 1}`. If `total` is 0, nothing has been ingested: route to `instrument-agent`. If
   traces are flowing, say the inbox is clear for the last 7 days, give the trace count, and offer
-  the most useful next step from Step 3 for a healthy project: `gate-release` before the next
+  the most useful next step from Step 3 for a healthy agent: `gate-release` before the next
   change ships, `reliability-review` for a status report, or `write-judge` if no judge is deployed
   yet (check with `list_judges` with `{"limit": 10}`).
+- **Gates.** Of the top five failure modes `list_failure_modes` returns, count those whose
+  `gate.gateId` is null and add one line: "3 of the top 5 failure modes have no gate". A gate is
+  what CI replays on every build. If the count is above zero, offer the gate row in Step 3. Skip the
+  line if the items carry no `gate` (an older server).
 - **A count is null.** It could not be read. Say "unknown", never zero.
 - **The reply is an error.** Report the error and its `status` as returned and fall back to the
   survey below. A 401 or 403 means the sign-in or role, not an empty project.
 
-The inbox is computed from traces and needs no LLM connection. A project without one still gets
-its rows, but the steps after it that call a model (generating a remediation, running a judge)
+The inbox is computed from traces and needs no LLM connection. An agent without one still gets
+its rows, but the steps after it that call a model (generating a fix, running a judge)
 report a connection error or use a simpler fallback. If any later call says no LLM connection is
 configured, tell the user to add one under **Settings → LLM providers**.
 
@@ -111,8 +115,8 @@ configured, tell the user to add one under **Settings → LLM providers**.
 | `verified` | The fix held. Nothing to do; mention it as good news | none |
 | `downstream` | A service outside the agent owns it. Name the owner from `get_remediation`; do not change the prompt | `triage-failures` |
 
-`targetType` says what a row is: `cluster` (a failure cluster; `targetId` goes to
-`get_failure_mode`), `issue` (a named failure mode) or `regression` (a quality score that dropped;
+`targetType` says what a row is: `cluster` (a discovered failure mode; `targetId` goes to
+`get_failure_mode`), `issue` (a tracked failure mode) or `regression` (a quality score that dropped;
 there is no fix source, so start with `triage-failures`). `fixSource` carries the id a fix is
 generated from and `remediationId` the fix itself, when one exists.
 
@@ -131,14 +135,14 @@ Make these calls in parallel. Each takes no required arguments.
 | `list_datasets` with `{"limit": 10}` | which regression sets exist |
 
 Report a snapshot of at most six lines: traces, failure modes (count, how many are new, the top
-one by sessions), open fixes, judges, datasets. Use the numbers the tools returned, and write
-"none" for zero rather than leaving a line out.
+one by sessions, how many of the top five have no gate), open fixes, judges, datasets. Use the
+numbers the tools returned, and write "none" for zero rather than leaving a line out.
 
 ## Step 3: Route
 
 Pick the first row that matches what the user asked for. If they asked for nothing specific,
 route on the primary next action from Step 2; with no next actions, pick the first row that
-matches the project's state.
+matches the agent's state.
 
 | Situation | Load |
 |---|---|
@@ -147,15 +151,16 @@ matches the project's state.
 | A failure mode is confirmed and there is no dataset built from it | `build-regression-set` |
 | A failure mode needs an automated check that takes judgment (grounding, the right action, tone), or a judge's verdicts are in doubt | `write-judge` |
 | A failure mode needs an automated check a rule can decide (output schema or format, a required tool call or its arguments, a forbidden pattern, a numeric limit), or the user asks for a code judge | `write-code-judge` |
-| The top inbox row is `fix_proposed`, there are open agent-fixable remediations, or the user wants to fix a failure | `fix-failure` |
+| The top inbox row is `fix_proposed`, there are open fixes for agent-fixable failures, or the user wants to fix a failure | `fix-failure` |
+| A confirmed failure mode has no gate (`gate.gateId` is null) and the user wants CI to guard it | None: no tool creates a gate. In the app, on the failure mode's card, **Create eval** → **Create eval gate**; it starts paused, and the user runs **Check evidence** before switching **Enforced in CI** on (https://app.neens.ai/docs/guides/eval-gates/). Create eval is refused without evidence, so an unconfirmed one goes to `triage-failures` first |
 | The user is about to ship a change (branch, prompt, model, config) and wants a go/no-go | `gate-release` |
 | The user is choosing between models | `choose-model` |
 | The user wants a status report: "how are we doing", weekly review, exec summary | `reliability-review` |
 | The user asks what Scout found or did, wants to change what Scout may do, or wants a recurring check ("every Monday, tell me…") | `scout` |
 
-The usual order for a new project is `instrument-agent` → `triage-failures` →
-`build-regression-set` → `write-judge` or `write-code-judge` → `fix-failure` → `gate-release`. A project with open
-remediations but no confirmed failure modes should still go through `triage-failures` first:
+The usual order for a new agent is `instrument-agent` → `triage-failures` →
+`build-regression-set` → `write-judge` or `write-code-judge` → `fix-failure` → `gate-release`. An
+agent with open fixes but no confirmed failure modes should still go through `triage-failures` first:
 fixing a failure nobody has looked at is how the wrong thing gets fixed.
 
 Tell the user which skill you are loading and why in one sentence, then follow that skill from
