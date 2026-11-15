@@ -69,15 +69,27 @@ Return only JSON: {"reason": "<critique>", "score": <1 for PASS, 0 for FAIL>}
 - `required_data`: only what the criterion needs. Use `["input", "output"]` for answer quality,
   and add `"messages"` when the verdict depends on tool calls or tool results.
 
-## Step 4: Create, deploy, run
+## Step 4: Create, check the draft, deploy, run
 
 1. `create_judge` with `name` (for example `fm-<failure-slug>`), `description`, `prompt_template`,
    `required_data`, and `scope: "trace"`.
-2. `deploy_judge` with `{"judge_id": …, "trigger_policy": "manual", "success_threshold": 0.5}`.
+2. **Check the draft against verdicts the user already gave**, before anything is deployed. If
+   `check_judge_agreement` does not exist on this server, skip to item 3; Step 5 is then the
+   check. Call it with `{"judge_id": …, "dataset_id": "<the failure's regression set>", "limit": 20}`.
+   The dataset keeps the check to traces labelled for this failure; without it, the newest labels
+   in the agent may be about something else. It scores each labelled trace once (one model call
+   each), stores nothing, and returns `agreed`, `falseAlarms`, `misses`, `kappa` and the
+   `disagreements` with the judge's reason. A reply with `humanVerdicts` 0 has nothing to check
+   against (no labelled traces in that set yet): say so and go on to item 3. Name any `errors`.
+   Ignore disagreements on traces used as prompt examples. With no regression set yet, omit
+   `dataset_id` only if every labelled trace in the agent is about this failure; otherwise skip
+   the check and rely on Step 5. If it misses the bar in Step 5, revise now (Step 6, item 1)
+   and check the new `version_id` again; deploy only a draft that holds.
+3. `deploy_judge` with `{"judge_id": …, "trigger_policy": "manual", "success_threshold": 0.5}`.
    Keep it manual until Step 6.
-3. `run_eval` with `{"judge_id": …, "sample_size": 30}`. It scores the 30 most recent eligible
+4. `run_eval` with `{"judge_id": …, "sample_size": 30}`. It scores the 30 most recent eligible
    traces. If the reply is not terminal yet, poll `get_eval_run` until it is.
-4. `get_eval_run` with `{"run_id": …, "limit": 50}`. Each task's `score` 1 is a pass and 0 a
+5. `get_eval_run` with `{"run_id": …, "limit": 50}`. Each task's `score` 1 is a pass and 0 a
    fail; `passed`, `failed` and `passRate` are those verdicts over `scored`. `errored` tasks were
    never judged: name how many.
 
@@ -120,17 +132,20 @@ one disagreement moves the rate by 10 points, so present the counts next to the 
 
 ## Step 6: Iterate or ship
 
-**It misses the bar.** Read every disagreement from `list_judge_disagreements` with the user. A
+**It misses the bar.** Read every disagreement from `list_judge_disagreements` (or `check_judge_agreement`) with the user. A
 false alarm means FAIL is defined too broadly; a miss means PASS is too lenient or an example is
 misleading. Change the definitions or the examples, not the output format. Then:
 
 1. `create_judge_version` with `{"judge_id": …, "prompt_template": "<new prompt>", "note": "<what changed and why>"}`.
    Everything you do not name carries over. The reply's `versionId` is the new version, and
    `deploymentsOnOlderVersions` lists the deployments still scoring with the old one.
-2. `deploy_judge` with `{"judge_id": …, "version_id": "<versionId>", "trigger_policy": "manual", "success_threshold": 0.5}`.
-3. Repeat Steps 4 and 5 on fresh traces. Pass the new deployment's id as `deployment_id` to
+2. Where available, `check_judge_agreement` with `{"judge_id": …, "version_id": "<versionId>"}`
+   (and the same `dataset_id`) is the cheap first check of the new version. If it still misses
+   the bar, go back to item 1; do not deploy it.
+3. `deploy_judge` with `{"judge_id": …, "version_id": "<versionId>", "trigger_policy": "manual", "success_threshold": 0.5}`.
+4. Repeat Step 4 items 4 and 5, then Step 5, on fresh traces. Pass the new deployment's id as `deployment_id` to
    `run_eval`: with two deployments enabled, `judge_id` alone is refused as ambiguous.
-4. When the new version holds, `disable_deployment` with the old deployment's id so the two do not
+5. When the new version holds, `disable_deployment` with the old deployment's id so the two do not
    both score. Its scores and run history are kept. `get_judge_runs` lists every run of the judge
    if you need an earlier run id.
 

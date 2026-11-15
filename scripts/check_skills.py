@@ -37,6 +37,8 @@ SNAPSHOT = ROOT / "scripts" / "tools.snapshot.json"
 # Backticked snake_case words that are arguments, fields or values, not tools.
 TOOL_SHAPED = re.compile(r"`([a-z]+(?:_[a-z0-9]+)+)`")
 JSON_OBJECT = re.compile(r"\{[^{}]*\"[a-z_]+\"\s*:[^{}]*\}")
+# The key whose value a matched object is: `"output_spec": {...}` is an argument's value, not arguments.
+VALUE_OF = re.compile(r"\"([a-z_]+)\"\s*:\s*$")
 JSON_KEY = re.compile(r"\"([a-z_]+)\"\s*:")
 # Keys that live inside nested argument values (a model-sweep arm, an `output_spec`), not at the top level.
 NESTED_KEYS = {"label", "agent_connection_id", "pass_label", "fail_label"}
@@ -81,6 +83,7 @@ def blocks(text: str) -> list[str]:
 
 def check(tools: list[dict]) -> list[str]:
     schema = {t["name"]: set(t.get("inputSchema", {}).get("properties", {})) for t in tools}
+    props = {t["name"]: t.get("inputSchema", {}).get("properties", {}) for t in tools}
     all_args = set().union(*schema.values())
     # Enum values a tool accepts (e.g. a `stage` filter) are quoted on purpose too.
     all_args |= {
@@ -100,17 +103,32 @@ def check(tools: list[dict]) -> list[str]:
         if not desc or len(desc) > 1024:
             problems.append(f"{rel}: description missing or longer than 1024 chars ({len(desc)})")
 
+        known = FIELDS | SKILL_FIELDS.get(skill_md.parent.name, set())
         for name in sorted(set(TOOL_SHAPED.findall(text))):
-            if name not in schema and name not in all_args and name not in FIELDS:
+            if name not in schema and name not in all_args and name not in known:
                 problems.append(f"{rel}: `{name}` is not a Neens tool or argument")
 
         previous: list[str] = []
         for block in blocks(text):
             here = [n for n in TOOL_SHAPED.findall(block) if n in schema]
             nearby = here or previous
-            for obj in JSON_OBJECT.findall(block):
+            for m in JSON_OBJECT.finditer(block):
+                obj = m.group(0)
                 keys = set(JSON_KEY.findall(obj)) - NESTED_KEYS
                 if not nearby or not keys:
+                    continue
+                parent = VALUE_OF.search(block[: m.start()])
+                if parent:
+                    # The value of an argument: check it against that argument's own object schema
+                    # when the tool declares one, never against the tool's top-level arguments.
+                    nested = [props[n].get(parent.group(1), {}).get("properties") for n in nearby]
+                    nested = [set(p) for p in nested if p]
+                    if not nested:
+                        continue
+                    allowed = set().union(*nested)
+                    if keys - allowed:
+                        problems.append(f"{rel}: {sorted(keys - allowed)} not accepted in "
+                                        f"`{parent.group(1)}` of {sorted(set(nearby))}: {obj[:80]}")
                     continue
                 allowed = set().union(*(schema[n] for n in nearby))
                 bad = keys - allowed
@@ -137,6 +155,18 @@ FIELDS = {
     "force_flush", "tracer_provider", "final_answer", "final_output",
     # an example tool name from the user's own agent
     "lookup_order",
+}
+
+# Names allowed in ONE skill only. The next-action kinds look like tool names (`write_judge`,
+# `build_regression_set`), so a global allowance would hide a made-up tool in every other skill.
+SKILL_FIELDS = {
+    # `kind` values quoted from get_next_actions replies (start_fix_run is also a tool)
+    "neens-start": {
+        "connect_agent", "add_llm_connection", "resume_autonomy", "connect_repo",
+        "confirm_failure_mode", "build_regression_set", "write_judge", "review_disagreements",
+        "merge_fix_pr", "shared_failure", "uneven_coverage", "failing_connection",
+        "unpriced_model", "budget_near_limit",
+    },
 }
 
 

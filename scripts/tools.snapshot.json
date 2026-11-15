@@ -85,6 +85,27 @@
   }
  },
  {
+  "name": "cancel_ambient_run",
+  "description": "Cancel a queued, running or waiting ambient run. It stops before its next step (a waiting run stops waiting) and is marked cancelled; a finished run cannot be cancelled.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "run_id": {
+     "type": "string",
+     "description": "The ambient run's id."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "run_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "cancel_preprod_run",
   "description": "Cancel a pre-prod run that is still awaiting traces or running. Terminal (a run that already completed/failed/cancelled) is refused rather than rewritten \u2014 cancelling is not a way to discard a result.",
   "inputSchema": {
@@ -98,6 +119,41 @@
    "additionalProperties": false,
    "required": [
     "run_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "check_judge_agreement",
+  "description": "Check an llm_prompt judge against reviewers' pass/fail verdicts WITHOUT deploying it: scores the judge on up to `limit` traces a person already labelled (newest first; optionally only members of dataset_id) and returns how many it agreed with, its false alarms (judge failed, reviewer passed) and misses (judge passed, reviewer failed), Cohen's kappa, and the disagreements. Stores nothing. Spends one model call per trace on the agent's LLM connection.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "judge_id": {
+     "type": "string",
+     "description": "Judge id (required)."
+    },
+    "version_id": {
+     "type": "string",
+     "description": "Judge version; omit for the current version."
+    },
+    "dataset_id": {
+     "type": "string",
+     "description": "Only traces in this dataset (id or name)."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 20,
+     "description": "Verdicts to check against (default 10, max 20)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "judge_id"
    ]
   },
   "annotations": {
@@ -657,6 +713,67 @@
   }
  },
  {
+  "name": "create_standing_instruction",
+  "description": "Give Scout a standing instruction on this agent, for yourself: text says what to do in your own words (\"Every Monday, review this agent and tell me what changed\"). Give EITHER cron + timezone (five cron fields, e.g. '0 9 * * 1' = Mondays 09:00; at most about once an hour) OR condition_kind (an event Scout reacts to: insight_opened, alert_fired, clustering_finished, efficacy_verdict, judge_alignment_drop, agent_version_seen, autonomy_suspended, action_reopened) with optional condition_target_id. slack=true also DMs results to you in Slack. once=true ends it after the first result. Results go only to you. There is a limit per person; over it this is refused and nothing is replaced (pausing does not free a place; ending does). Undo with end_standing_instruction. No agent tool can delete an instruction: only the person can, in Settings.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "text": {
+     "type": "string",
+     "maxLength": 1000,
+     "description": "What Scout should do, in your words."
+    },
+    "name": {
+     "type": "string",
+     "maxLength": 80,
+     "description": "A short label (default: the first line)."
+    },
+    "cron": {
+     "type": "string",
+     "description": "Five cron fields, e.g. '0 9 * * 1'."
+    },
+    "timezone": {
+     "type": "string",
+     "description": "IANA zone, e.g. 'Europe/Berlin' (UTC)."
+    },
+    "condition_kind": {
+     "type": "string",
+     "enum": [
+      "insight_opened",
+      "alert_fired",
+      "clustering_finished",
+      "efficacy_verdict",
+      "judge_alignment_drop",
+      "agent_version_seen",
+      "autonomy_suspended",
+      "action_reopened"
+     ],
+     "description": "Fire on this event instead of a schedule."
+    },
+    "condition_target_id": {
+     "type": "string",
+     "description": "Only events about this judge, fix, next action or agent version."
+    },
+    "slack": {
+     "type": "boolean",
+     "description": "Also DM results to you in Slack."
+    },
+    "once": {
+     "type": "boolean",
+     "description": "End after the first result."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "text"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "deploy_enrichment",
   "description": "Turn a code (custom_python) enrichment on. trigger 'on_ingest' enriches newly ingested traces automatically (capped per day); 'manual' (default) enables it for runs started from the Neens app. Existing traces are not back-filled by this call.",
   "inputSchema": {
@@ -740,6 +857,26 @@
    "additionalProperties": false,
    "required": [
     "deployment_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "end_standing_instruction",
+  "description": "Stop one of your standing instructions for good: it never runs again and frees its place under your limit; past results stay readable. There is no undo \u2014 create a new one instead. This is the furthest an agent can go: no agent tool can DELETE an instruction. If the person asks to delete one, end it and tell them deleting is done by them in Settings \u2192 Ambient autonomy.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "instruction_id": {
+     "type": "string"
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "instruction_id"
    ]
   },
   "annotations": {
@@ -857,8 +994,73 @@
   }
  },
  {
+  "name": "get_ambient_run",
+  "description": "One ambient run in full: what triggered it (with the ids of the events folded into it), the tools each turn called, and the finding \u2014 title, summary, confidence and the ids it cites \u2014 plus any plan it recommends for a person to approve. The finding is agent-written (author=agent), carries only links checked against what the run read, says whether it was translated (translation.status: source, translated or untranslated + reason), and recurrenceOf names the earlier run whose conclusion this one re-checked. wait is the job it is (or last was) waiting on: kind, id, status (waiting, resumed, expired, cancelled), the job's status and the deadline.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "run_id": {
+     "type": "string",
+     "description": "The ambient run's id."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "run_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_ambient_settings",
+  "description": "This agent's ambient-agent settings and guardrails: its level (off, suggest, investigate, act), the write tools it may run itself at act (actTools; empty by default) and every tool that can be allowed (actEligible), the investigation budget for the period with what is spent and reserved so far, the caps on runs per day and concurrent runs, the per-run ceilings, whether it is paused (the kill switch), the LLM connection investigations use, and any targets held after repeated failed runs (with their ids, for release_ambient_quarantine).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_ambient_signal_quality",
+  "description": "How useful people found each kind of next action on this agent over the last 30 days: per kind the useful and not-useful ratings, the useful rate (null when unrated), and whether the ranking demotes the kind or mutes it from the list. A kind moves only after enough ratings (minRatings). Ratings by AI agents and API keys are not counted.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_ambient_trace_project",
+  "description": "Whether the ambient agent's own traces go to this workspace's built-in agent project, and which project that is (projectId, set only when you can open it). With run_id, also the trace that ambient run sent there (sessionId + projectId): open it with get_trace under that project to see each model call and tool call the run made. A run whose trace was not sent (the project was off) or that you cannot open is not found.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "run_id": {
+     "type": "string",
+     "description": "Optional: an ambient run's id, to get its trace."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "get_business_kpis",
-  "description": "List the project's Business KPIs (a measure promoted to a committed target) with current value, whether the target is met, and the trend. Pass kpi_id to drill into one KPI, including the failure clusters eroding it. A null value reads targetStatus 'unknown' (never 'missed'). trend compares the last 7 complete days with the 7 before, pooled, and carries both readings and both sample sizes; a null trend is UNKNOWN, not flat \u2014 say why from trendUnavailable (thin_sample means a week was too small; trendSamples has the counts). The list also returns lead \u2014 the page's one-sentence summary (money recovered or lost per month, and the KPI still off target); quote lead.sentences rather than recomputing \u2014 and drafts, KPIs configured but not yet committed. lead.recovered counts only fixes measured against a holdout (causal); lead.correlational is KPI movement beside fixes with no holdout: report it separately as not proven, never add the two. Use for 'how are our KPIs doing', 'are we hitting our targets', 'what target should we set', or 'what's dragging KPI X down'. lead.action 'set_targets' means lead.gaps.noTarget KPIs have a value but no target, so they read unknown; pass propose_targets=true to also get targetProposals \u2014 a target proposed per such KPI from its last 28 complete days. status 'proposed' carries proposedTarget (the baseline rounded to hold the current level); 'insufficient_history', 'no_value' and 'baseline_at_limit' carry none \u2014 say so, never invent one. A proposal is a suggestion: an admin confirms or edits it with Set targets on the Business KPIs page.",
+  "description": "List the project's Business KPIs (a measure promoted to a committed target) with current value, whether the target is met, and the trend. Pass kpi_id to drill into one KPI, including the failure clusters eroding it. A null value reads targetStatus 'unknown' (never 'missed'). A KPI with targetWindowDays is judged at that window whatever range you ask for; targetJudgedAt then names the window and its value, so say the verdict was judged at that window. trend compares the last 7 complete days with the 7 before, pooled, and carries both readings and both sample sizes; a null trend is UNKNOWN, not flat \u2014 say why from trendUnavailable (thin_sample means a week was too small; trendSamples has the counts). The list also returns lead \u2014 the page's one-sentence summary (money recovered or lost per month, and the KPI still off target); quote lead.sentences rather than recomputing \u2014 and drafts, KPIs configured but not yet committed. lead.recovered counts only fixes measured against a holdout (causal); lead.correlational is KPI movement beside fixes with no holdout: report it separately as not proven, never add the two. Use for 'how are our KPIs doing', 'are we hitting our targets', 'what target should we set', or 'what's dragging KPI X down'. lead.action 'set_targets' means lead.gaps.noTarget KPIs have a value but no target, so they read unknown; pass propose_targets=true to also get targetProposals \u2014 a target proposed per such KPI from its last 28 complete days. status 'proposed' carries proposedTarget (the baseline rounded to hold the current level); 'insufficient_history', 'no_value' and 'baseline_at_limit' carry none \u2014 say so, never invent one. A proposal is a suggestion: an admin confirms or edits it with Set targets on the Business KPIs page.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1022,7 +1224,7 @@
  },
  {
   "name": "get_failure_mode",
-  "description": "Fetch one failure cluster/mode by id: label, description, root cause, remediation summary, up to 10 member session ids plus memberTotal (how many traces the mode holds \u2014 list_traces with cluster_id pages them all), and its distribution across agent versions (members per version vs that version's traffic, so a failure only one build produces stands out). Use after list_failure_modes to drill into a specific mode. fixabilityVerdict says whether a patch can fix the failure: `patchable` (a fix run verified a patch), `capability_limited` (a model sweep on the failure's golden set shows the current model below the bar while a stronger model clears it \u2014 recommend a model change via that sweep, do not start another fix run; Neens never switches models itself) or `unknown` (follow recommendation.action, e.g. run_model_sweep on recommendation.datasetId).",
+  "description": "Fetch one failure cluster/mode by id: label, description, root cause, remediation summary, up to 10 member session ids plus memberTotal (how many traces the mode holds \u2014 list_traces with cluster_id pages them all), and its distribution across agent versions (members per version vs that version's traffic, so a failure only one build produces stands out). Use after list_failure_modes to drill into a specific mode. fixabilityVerdict says whether a patch can fix the failure: `patchable` (a fix run verified a patch), `capability_limited` (a model sweep on the failure's golden set shows the current model below the bar while a stronger model clears it \u2014 recommend a model change via that sweep, do not start another fix run; Neens never switches models itself) or `unknown` (follow recommendation.action, e.g. run_model_sweep on recommendation.datasetId). `paths` groups the mode's recent sessions by how they fail (kind: retryLoop | retryOnce | recoveredRetry | recovered | stopsAtFailure | continuesAfter | noErrorStep | other), each with its count, the step it first fails at (and causeStep when that step received a tool's error), the retried step's run range, the most common error and example session ids for get_trace.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1174,6 +1376,39 @@
    "required": [
     "sweep_id"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_next_actions",
+  "description": "What to do next on this agent: the ranked next best actions the person would see on the agent's card (a primary action and up to four more), already filtered to what this connection may see. Each action has id, kind, title, why (impact), target (targetType + targetId: a cluster is a failure mode for get_failure_mode), state, canRun (false means the caller lacks a capability in requires, or is an API key), and steps (the tools a run would call, or a link when it is done outside Neens). Pass action_id for one action in any state, including who ran, handed off or closed it. Org and company actions (scopeKind org or company) span agents: their parts list only the agents this connection can see, and their counts come from those parts. An action is rules-written; its finding (when present) is the ambient agent's own investigation of it \u2014 agent-written, with its runId for get_ambient_run. Use it for \"what should I do next?\"; use get_action_inbox for what changed and the fix-loop queue.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action_id": {
+     "type": "string",
+     "description": "One action's id (from a previous call). Omit for the list."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10,
+     "description": "Max actions (1\u201310, default 5)."
+    },
+    "scope": {
+     "type": "string",
+     "enum": [
+      "all",
+      "agent",
+      "rollups"
+     ],
+     "description": "all (default), agent (this agent only), or rollups (org and company actions only)."
+    }
+   },
+   "additionalProperties": false
   },
   "annotations": {
    "readOnlyHint": true,
@@ -1412,6 +1647,45 @@
     "limit": {
      "type": "integer",
      "description": "Max endpoints (1\u201350, default 25)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "list_ambient_runs",
+  "description": "The ambient agent's run log for this agent, newest first: each investigation it ran on its own after an event (an alert, new insights, a finished clustering run, a fix's efficacy verdict, a judge drifting from reviewers, a new agent version). Each run has id, triggerKind, status (queued, running, waiting = paused until a long-running job ends, completed, failed, cancelled, skipped_no_connection = no LLM connection is configured, budget_refused = the agent's budget could not cover it, stopped = a guardrail ended it \u2014 reason wait_expired when the job it waited on outlived its 24 h / 72 h limit), reason, waitingOn (the job a waiting run waits for, with when the wait expires) and, when completed, the finding's title (agent-written, in the reader's language when it could be translated). Filter with status; include_memory adds what the agent remembers from earlier runs (its notes: conclusion, ids, date).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "status": {
+     "type": "string",
+     "enum": [
+      "queued",
+      "running",
+      "waiting",
+      "completed",
+      "failed",
+      "cancelled",
+      "skipped_no_connection",
+      "stopped",
+      "budget_refused"
+     ],
+     "description": "Only runs in this status."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 25,
+     "description": "Max runs (1\u201325, default 10)."
+    },
+    "include_memory": {
+     "type": "boolean",
+     "description": "Also return the agent's memory notes."
     }
    },
    "additionalProperties": false
@@ -1904,6 +2178,24 @@
   }
  },
  {
+  "name": "list_standing_instructions",
+  "description": "Your own standing instructions for Scout (the ambient agent) on this agent: each one's id, name, text, schedule (cron, time zone, next run) or condition (the event it waits for), status (active, paused, ended + why), last result and waitingOn (level = Scout is not set to investigate on this agent, paused, quarantined). Pass instruction_id to read one with its latest results (Scout's findings). Only the person who set an instruction can see it.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "instruction_id": {
+     "type": "string",
+     "description": "Read this one, with its latest results."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "list_traces",
   "description": "List/search agent traces (sessions) in the current project. Filter by status, agent, FAILURE CLUSTER (`cluster_id` \u2014 the exact membership set, from list_clusters / list_failure_modes), score metric/label/status, issue mode, failure set, model, tool name, tags, source, agent version, free text, time bounds, conversation, and duration/token ranges. Returns the total match count and up to `limit` summary rows. Use to find traces to inspect, annotate, or add to a dataset.",
   "inputSchema": {
@@ -2015,6 +2307,42 @@
   }
  },
  {
+  "name": "rate_next_action",
+  "description": "Rate one next action useful or not_useful (clear removes your rating), with an optional short note saying why. Use it after acting on, or deciding to skip, an action from get_next_actions. Only your own rating changes. A rating from an agent or an API key is stored as an agent rating: people see it, but it never changes how actions rank (counted is false).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action_id": {
+     "type": "string",
+     "description": "The action's id (from get_next_actions)."
+    },
+    "rating": {
+     "type": "string",
+     "enum": [
+      "useful",
+      "not_useful",
+      "clear"
+     ],
+     "description": "useful, not_useful, or clear to remove your rating."
+    },
+    "note": {
+     "type": "string",
+     "maxLength": 500,
+     "description": "Optional: why (a sentence)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "action_id",
+    "rating"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "record_fix_merge",
   "description": "Tell Neens a fix PR was MERGED so it can start a post-merge efficacy close-out: Neens stamps a deploy event + a close-out watch and, after the post-deploy window, measures the fixed failure mode's real production volume before vs after and auto-verifies (or flags a regression of) the remediation. remediation_id is required; pr_url/commit_sha default from the remediation, merged_at defaults to now.",
   "inputSchema": {
@@ -2111,6 +2439,27 @@
    "required": [
     "name",
     "base_url"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "release_ambient_quarantine",
+  "description": "Release a target the ambient agent stopped investigating after repeated failed runs (admin). Its next event starts a run again and its failure count restarts. Take the id from get_ambient_settings. There is no undo: if it keeps failing it is held again.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "quarantine_id": {
+     "type": "string",
+     "description": "The held target's id."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "quarantine_id"
    ]
   },
   "annotations": {
@@ -2823,6 +3172,75 @@
   }
  },
  {
+  "name": "update_ambient_settings",
+  "description": "Change this agent's ambient settings (admin). Send only what changes: level (off, suggest, investigate, act \u2014 act also lets it run the write tools in act_tools itself), act_tools (the full allowlist to store; [] allows none; only tools from actEligible: building a regression set, drafting a judge it never deploys, checking it against reviewers' verdicts, running an existing deployment), connection_id (the LLM connection investigations use; empty string = follow the assistant's), budget_usd + budget_period (day, week, month), max_runs_per_day, max_concurrent_runs, paused (true stops every investigation at its next step). To undo, call it again with the previous values from get_ambient_settings.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "level": {
+     "type": "string",
+     "enum": [
+      "off",
+      "suggest",
+      "investigate",
+      "act"
+     ],
+     "description": "The agent's ambient level."
+    },
+    "connection_id": {
+     "type": "string",
+     "description": "LLM connection id for investigations; empty string follows the assistant's connection."
+    },
+    "budget_usd": {
+     "type": "number",
+     "minimum": 0,
+     "description": "Most investigations may cost per period, in USD."
+    },
+    "budget_period": {
+     "type": "string",
+     "enum": [
+      "day",
+      "week",
+      "month"
+     ],
+     "description": "The budget's period (with budget_usd)."
+    },
+    "max_runs_per_day": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "max_concurrent_runs": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "paused": {
+     "type": "boolean",
+     "description": "true pauses every investigation (the kill switch)."
+    },
+    "act_tools": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "enum": [
+       "create_dataset",
+       "add_to_dataset",
+       "create_golden_version",
+       "create_judge",
+       "check_judge_agreement",
+       "run_eval"
+      ]
+     },
+     "description": "The whole write allowlist for the act level (replaces it)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "update_remediation",
   "description": "Transition a remediation's lifecycle: `status` (proof lane: proposed|accepted|applied|verified|closed|regressed) and/or `work_state` (triage lane: todo|in_progress|done|archived) and/or `labels` and/or `assignee_id`. At least one required. Use to accept, progress, assign, or archive a fix. Moving an ACTIONABLE fix to `applied` or `verified` now requires a bound proof \u2014 a verification run (run_verification) or a bound eval gate \u2014 or an explicit force override with a reason; without one the transition is refused. Check get_remediation's proofBound first (a simulation alone does not count). Advisory / working_as_intended items have no agent eval and settle as `closed` with an acknowledgement note instead. `assignee_id` sets the fix's owner \u2014 a user id who can access this agent (anyone else is refused) \u2014 or \"\" to clear it. (Deleting remediations requires an admin over HTTP \u2014 not exposed here.)",
   "inputSchema": {
@@ -2866,6 +3284,74 @@
    "additionalProperties": false,
    "required": [
     "remediation_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "update_standing_instruction",
+  "description": "Change one of your standing instructions: paused (true stops it until resumed; false resumes it), text, name, cron + timezone, condition_kind (+ condition_target_id), slack, once. Send only what changes. To undo, call it again with the previous values from list_standing_instructions.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "instruction_id": {
+     "type": "string"
+    },
+    "text": {
+     "type": "string",
+     "maxLength": 1000,
+     "description": "What Scout should do, in your words."
+    },
+    "name": {
+     "type": "string",
+     "maxLength": 80,
+     "description": "A short label (default: the first line)."
+    },
+    "cron": {
+     "type": "string",
+     "description": "Five cron fields, e.g. '0 9 * * 1'."
+    },
+    "timezone": {
+     "type": "string",
+     "description": "IANA zone, e.g. 'Europe/Berlin' (UTC)."
+    },
+    "condition_kind": {
+     "type": "string",
+     "enum": [
+      "insight_opened",
+      "alert_fired",
+      "clustering_finished",
+      "efficacy_verdict",
+      "judge_alignment_drop",
+      "agent_version_seen",
+      "autonomy_suspended",
+      "action_reopened"
+     ],
+     "description": "Fire on this event instead of a schedule."
+    },
+    "condition_target_id": {
+     "type": "string",
+     "description": "Only events about this judge, fix, next action or agent version."
+    },
+    "slack": {
+     "type": "boolean",
+     "description": "Also DM results to you in Slack."
+    },
+    "once": {
+     "type": "boolean",
+     "description": "End after the first result."
+    },
+    "paused": {
+     "type": "boolean",
+     "description": "true pauses, false resumes."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "instruction_id"
    ]
   },
   "annotations": {

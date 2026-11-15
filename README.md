@@ -4,7 +4,7 @@ Skills that teach a coding agent (Claude Code, Codex, Cursor and any agent that 
 [Neens](https://neens.ai) failure-to-fix loop on your own agent: find what is failing, prove a
 fix, and make sure it cannot come back.
 
-Neens exposes the loop as an MCP server of more than 70 tools (as of Neens v0.32.1). The tools are the raw capability.
+Neens exposes the loop as an MCP server of up to 89 tools (the set depends on which features your Neens has turned on). The tools are the raw capability.
 These skills are the judgment about how to use them: which call comes first, what counts as
 evidence, what a number means, and when to stop and ask a person.
 
@@ -33,7 +33,7 @@ Every skill in this repo follows eight rules:
 
 | Skill | Use it when |
 |---|---|
-| [neens-start](skills/neens-start/SKILL.md) | You're not sure where to begin. Checks the connection, reads the action inbox, routes you. |
+| [neens-start](skills/neens-start/SKILL.md) | You're not sure where to begin. Checks the connection, reads the next actions and the action inbox, routes you. |
 | [instrument-agent](skills/instrument-agent/SKILL.md) | No traces yet. Wires OpenTelemetry to Neens for your framework and proves a trace arrived intact. |
 | [triage-failures](skills/triage-failures/SKILL.md) | "What's failing?" Reads the evidence, locates each failure, records your verdicts. |
 | [build-regression-set](skills/build-regression-set/SKILL.md) | A failure is confirmed. Freezes its traces, plus passing controls, into a golden set. |
@@ -43,12 +43,18 @@ Every skill in this repo follows eight rules:
 | [gate-release](skills/gate-release/SKILL.md) | "Can we ship this?" Replays every regression set against the candidate and returns GO, NO-GO or NO DATA. |
 | [choose-model](skills/choose-model/SKILL.md) | "Which model?" Runs a pass^k model sweep and reads it honestly. |
 | [reliability-review](skills/reliability-review/SKILL.md) | "How are we doing?" A one-page, evidence-backed status report: targets, failure modes, the fix loop with owners, and which failure modes have an eval gate. |
+| [scout](skills/scout/SKILL.md) | "What did Scout find?" Reads Scout's findings, checks or changes what it may do, and sets standing instructions. |
 
 `instrument-agent` covers Google ADK, AWS Bedrock AgentCore, Strands, LlamaIndex, Agno, smolagents,
 Pydantic AI, the Vercel AI SDK, LangGraph, the OpenAI Agents SDK, CrewAI and the Claude Agent SDK,
 plus plain OpenTelemetry for anything else.
 
-`neens-start` and `reliability-review` begin with `get_action_inbox`, the same ranked "what to fix
+`neens-start` routes from `get_next_actions`, the ranked next best actions on the agent's card,
+when Scout (the Neens background agent) is turned on. `scout` reads what Scout investigated and
+manages its settings and standing instructions. `write-judge` checks a draft judge against your
+existing verdicts with `check_judge_agreement` before deploying it, where the server has it.
+
+`neens-start` and `reliability-review` also read `get_action_inbox`, the same ranked "what to fix
 next" queue as the Insights page: what changed against the previous window, how many open items
 sit at each fix-loop stage (needs fix, fix proposed, in PR, verified, downstream), and the top
 rows with the ids the next call needs. It is read-only; rating rows is something people do in the
