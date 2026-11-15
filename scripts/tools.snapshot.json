@@ -86,13 +86,13 @@
  },
  {
   "name": "cancel_ambient_run",
-  "description": "Cancel a queued, running or waiting ambient run. It stops before its next step (a waiting run stops waiting) and is marked cancelled; a finished run cannot be cancelled.",
+  "description": "Cancel a queued, running or waiting Scout run. It stops before its next step (a waiting run stops waiting) and is marked cancelled; a finished run cannot be cancelled.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "run_id": {
      "type": "string",
-     "description": "The ambient run's id."
+     "description": "The Scout run's id."
     }
    },
    "additionalProperties": false,
@@ -746,7 +746,8 @@
       "judge_alignment_drop",
       "agent_version_seen",
       "autonomy_suspended",
-      "action_reopened"
+      "action_reopened",
+      "action_job_started"
      ],
      "description": "Fire on this event instead of a schedule."
     },
@@ -995,13 +996,13 @@
  },
  {
   "name": "get_ambient_run",
-  "description": "One ambient run in full: what triggered it (with the ids of the events folded into it), the tools each turn called, and the finding \u2014 title, summary, confidence and the ids it cites \u2014 plus any plan it recommends for a person to approve. The finding is agent-written (author=agent), carries only links checked against what the run read, says whether it was translated (translation.status: source, translated or untranslated + reason), and recurrenceOf names the earlier run whose conclusion this one re-checked. wait is the job it is (or last was) waiting on: kind, id, status (waiting, resumed, expired, cancelled), the job's status and the deadline.",
+  "description": "One Scout run in full: what triggered it (with the ids of the events folded into it), the tools each turn called, and the finding \u2014 title, summary, confidence and the ids it cites \u2014 plus any plan it recommends for a person to approve. The finding is agent-written (author=agent), carries only links checked against what the run read, says whether it was translated (translation.status: source, translated or untranslated + reason), and recurrenceOf names the earlier run whose conclusion this one re-checked. wait is the job it is (or last was) waiting on: kind, id, status (waiting, resumed, expired, cancelled), the job's status and the deadline.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "run_id": {
      "type": "string",
-     "description": "The ambient run's id."
+     "description": "The Scout run's id."
     }
    },
    "additionalProperties": false,
@@ -1016,7 +1017,7 @@
  },
  {
   "name": "get_ambient_settings",
-  "description": "This agent's ambient-agent settings and guardrails: its level (off, suggest, investigate, act), the write tools it may run itself at act (actTools; empty by default) and every tool that can be allowed (actEligible), the investigation budget for the period with what is spent and reserved so far, the caps on runs per day and concurrent runs, the per-run ceilings, whether it is paused (the kill switch), the LLM connection investigations use, and any targets held after repeated failed runs (with their ids, for release_ambient_quarantine).",
+  "description": "This agent's Scout settings and guardrails: its level (off, suggest, investigate, act), the write tools it may run itself at act (actTools; empty by default) and every tool that can be allowed (actEligible), the investigation budget for the period with what is spent and reserved so far, the caps on runs per day and concurrent runs, the per-run ceilings, whether it is paused (the kill switch), the LLM connection investigations use, and any targets held after repeated failed runs (with their ids, for release_ambient_quarantine).",
   "inputSchema": {
    "type": "object",
    "properties": {},
@@ -1042,13 +1043,13 @@
  },
  {
   "name": "get_ambient_trace_project",
-  "description": "Whether the ambient agent's own traces go to this workspace's built-in agent project, and which project that is (projectId, set only when you can open it). With run_id, also the trace that ambient run sent there (sessionId + projectId): open it with get_trace under that project to see each model call and tool call the run made. A run whose trace was not sent (the project was off) or that you cannot open is not found.",
+  "description": "Whether Scout's own traces go to this workspace's built-in agent project, and which project that is (projectId, set only when you can open it). With run_id, also the trace that Scout run sent there (sessionId + projectId): open it with get_trace under that project to see each model call and tool call the run made. A run whose trace was not sent (the project was off) or that you cannot open is not found.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "run_id": {
      "type": "string",
-     "description": "Optional: an ambient run's id, to get its trace."
+     "description": "Optional: a Scout run's id, to get its trace."
     }
    },
    "additionalProperties": false
@@ -1384,7 +1385,7 @@
  },
  {
   "name": "get_next_actions",
-  "description": "What to do next on this agent: the ranked next best actions the person would see on the agent's card (a primary action and up to four more), already filtered to what this connection may see. Each action has id, kind, title, why (impact), target (targetType + targetId: a cluster is a failure mode for get_failure_mode), state, canRun (false means the caller lacks a capability in requires, or is an API key), and steps (the tools a run would call, or a link when it is done outside Neens). Pass action_id for one action in any state, including who ran, handed off or closed it. Org and company actions (scopeKind org or company) span agents: their parts list only the agents this connection can see, and their counts come from those parts. An action is rules-written; its finding (when present) is the ambient agent's own investigation of it \u2014 agent-written, with its runId for get_ambient_run. Use it for \"what should I do next?\"; use get_action_inbox for what changed and the fix-loop queue.",
+  "description": "What to do next on this agent: the ranked next best actions the person would see on the agent's card (a primary action and up to four more), already filtered to what this connection may see. Each action has id, kind, title, why (impact), target (targetType + targetId: a cluster is a failure mode for get_failure_mode), state, canRun (false means the caller lacks a capability in requires, or is an API key), and steps (the tools a run would call, or a link when it is done outside Neens). Pass action_id for one action in any state, including who ran, handed off or closed it. Org and company actions (scopeKind org or company) span agents: their parts list only the agents this connection can see, and their counts come from those parts. An action is rules-written; its finding (when present) is Scout's own investigation of it \u2014 agent-written, with its runId for get_ambient_run. Use it for \"what should I do next?\"; use get_action_inbox for what changed and the fix-loop queue.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1658,7 +1659,7 @@
  },
  {
   "name": "list_ambient_runs",
-  "description": "The ambient agent's run log for this agent, newest first: each investigation it ran on its own after an event (an alert, new insights, a finished clustering run, a fix's efficacy verdict, a judge drifting from reviewers, a new agent version). Each run has id, triggerKind, status (queued, running, waiting = paused until a long-running job ends, completed, failed, cancelled, skipped_no_connection = no LLM connection is configured, budget_refused = the agent's budget could not cover it, stopped = a guardrail ended it \u2014 reason wait_expired when the job it waited on outlived its 24 h / 72 h limit), reason, waitingOn (the job a waiting run waits for, with when the wait expires) and, when completed, the finding's title (agent-written, in the reader's language when it could be translated). Filter with status; include_memory adds what the agent remembers from earlier runs (its notes: conclusion, ids, date).",
+  "description": "Scout's run log for this agent (Scout is the Neens agent behind the ambient tools), newest first: each investigation it ran on its own after an event (an alert, new insights, a finished clustering run, a fix's efficacy verdict, a judge drifting from reviewers, a new agent version). Each run has id, triggerKind, status (queued, running, waiting = paused until a long-running job ends, completed, failed, cancelled, skipped_no_connection = no LLM connection is configured, budget_refused = the agent's budget could not cover it, stopped = a guardrail ended it \u2014 reason wait_expired when the job it waited on outlived its 24 h / 72 h limit), reason, waitingOn (the job a waiting run waits for, with when the wait expires) and, when completed, the finding's title (agent-written, in the reader's language when it could be translated). Filter with status; include_memory adds what the agent remembers from earlier runs (its notes: conclusion, ids, date).",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1872,10 +1873,22 @@
  },
  {
   "name": "list_failure_modes",
-  "description": "Summarize the latest failure-clustering run: readiness, top failure modes (label, description, session counts, NEW flags, root-cause hypotheses). Use to understand what's failing before generating a remediation or a judge.",
+  "description": "Summarize the latest failure-clustering run: readiness, the failure modes ranked by impact (label, description, session counts, NEW flags, root-cause hypotheses, fix-loop stage, who can fix it \u2014 owner agent | external | unclassified \u2014 traces in the window vs the previous window, and each mode's ONE primaryAction), plus the page's `briefing`: plain-language sentences, the owner split, chips and up to 3 nextActions. An `external` mode (stage `downstream`) is escalated to the service that owns it, never fixed in the agent. Use to understand what's failing before generating a remediation or a judge.",
   "inputSchema": {
    "type": "object",
-   "properties": {},
+   "properties": {
+    "range": {
+     "type": "string",
+     "enum": [
+      "today",
+      "24h",
+      "7d",
+      "30d",
+      "all"
+     ],
+     "description": "Time window, compared with the previous window of the same length (default 7d; `all` has no previous window)."
+    }
+   },
    "additionalProperties": false
   },
   "annotations": {
@@ -2179,7 +2192,7 @@
  },
  {
   "name": "list_standing_instructions",
-  "description": "Your own standing instructions for Scout (the ambient agent) on this agent: each one's id, name, text, schedule (cron, time zone, next run) or condition (the event it waits for), status (active, paused, ended + why), last result and waitingOn (level = Scout is not set to investigate on this agent, paused, quarantined). Pass instruction_id to read one with its latest results (Scout's findings). Only the person who set an instruction can see it.",
+  "description": "Your own standing instructions for Scout on this agent: each one's id, name, text, schedule (cron, time zone, next run) or condition (the event it waits for), status (active, paused, ended + why), last result and waitingOn (level = Scout is not set to investigate on this agent, paused, quarantined). Pass instruction_id to read one with its latest results (Scout's findings). Only the person who set an instruction can see it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2448,7 +2461,7 @@
  },
  {
   "name": "release_ambient_quarantine",
-  "description": "Release a target the ambient agent stopped investigating after repeated failed runs (admin). Its next event starts a run again and its failure count restarts. Take the id from get_ambient_settings. There is no undo: if it keeps failing it is held again.",
+  "description": "Release a target Scout stopped investigating after repeated failed runs (admin). Its next event starts a run again and its failure count restarts. Take the id from get_ambient_settings. There is no undo: if it keeps failing it is held again.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3173,7 +3186,7 @@
  },
  {
   "name": "update_ambient_settings",
-  "description": "Change this agent's ambient settings (admin). Send only what changes: level (off, suggest, investigate, act \u2014 act also lets it run the write tools in act_tools itself), act_tools (the full allowlist to store; [] allows none; only tools from actEligible: building a regression set, drafting a judge it never deploys, checking it against reviewers' verdicts, running an existing deployment), connection_id (the LLM connection investigations use; empty string = follow the assistant's), budget_usd + budget_period (day, week, month), max_runs_per_day, max_concurrent_runs, paused (true stops every investigation at its next step). To undo, call it again with the previous values from get_ambient_settings.",
+  "description": "Change this agent's Scout settings (admin). Send only what changes: level (off, suggest, investigate, act \u2014 act also lets it run the write tools in act_tools itself), act_tools (the full allowlist to store; [] allows none; only tools from actEligible: building a regression set, drafting a judge it never deploys, checking it against reviewers' verdicts, running an existing deployment), connection_id (the LLM connection investigations use; empty string = follow the assistant's), budget_usd + budget_period (day, week, month), max_runs_per_day, max_concurrent_runs, paused (true stops every investigation at its next step). To undo, call it again with the previous values from get_ambient_settings.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3185,7 +3198,7 @@
       "investigate",
       "act"
      ],
-     "description": "The agent's ambient level."
+     "description": "The agent's Scout level."
     },
     "connection_id": {
      "type": "string",
@@ -3328,7 +3341,8 @@
       "judge_alignment_drop",
       "agent_version_seen",
       "autonomy_suspended",
-      "action_reopened"
+      "action_reopened",
+      "action_job_started"
      ],
      "description": "Fire on this event instead of a schedule."
     },
