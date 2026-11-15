@@ -1,11 +1,11 @@
 ---
 name: fix-failure
 description: >
-  Close the loop on one agent failure: take a remediation from the Neens backlog, implement it in
+  Close the loop on one agent failure: take a fix from the Neens backlog, implement it in
   the user's own repo, prove it with a real Neens evaluation of the candidate build against the
   failure's golden set, and report the PR and proof back so the fix is tracked through merge. Use
   when the user wants to fix a failure, asks for the next fix, or has open agent-fixable
-  remediations. Do NOT use for downstream service outages (advisory items) or to gate a whole
+  fixes. Do NOT use for downstream service outages (advisory items) or to gate a whole
   release; use `gate-release` for that.
 ---
 
@@ -17,8 +17,8 @@ in the user's repo with their tools. Neens diagnoses and verifies. A human merge
 
 ## Step 1: Pick the fix
 
-Call `list_open_remediations`. By default it returns only open items that are grounded and
-agent-fixable, ranked by priority. If the user named a failure, use
+Call `list_open_remediations` (the API calls fixes remediations). By default it returns only
+open fixes that are grounded and agent-fixable, ranked by priority. If the user named a failure, use
 `list_remediations` with `{"clusterId": …}` instead.
 
 Show the top three: title, type, priority, and the failure it addresses. Let the user choose. If
@@ -56,6 +56,15 @@ with no CLI to install.
 
 Call `report_fix_status` with `{"remediation_id": …, "status": "accepted", "work_state": "in_progress"}`
 so the team can see the fix is being worked on.
+
+Check the fix's `assignee` on `get_remediation` (null means unassigned). If `assignee.hasAccess`
+is false, the owner can no longer reach this agent: tell the user and suggest reassigning. If it is
+null, access is unknown, so don't claim either way. To assign the fix (to the user, or to someone
+they name), call `list_assignable_users` with `{"remediation_id": …, "q": "<part of the name>"}`,
+then `update_remediation` with `{"remediation_id": …, "assignee_id": "<the returned id>"}`. Never
+guess a user id; anyone not listed is refused. Listing people needs a signed-in person's
+credential, not an agent API key. If the call is refused, tell the user to assign the fix in the
+Neens app instead.
 
 ## Step 4: Implement on a branch
 
@@ -145,8 +154,8 @@ Read the verdict honestly:
   resolved address, so bind the agent to both. Fix the endpoint and run again. Never report this
   as "the fix failed".
 - **It was scored by a judge that has nothing to do with this failure.** Without
-  `judge_deployment_ids`, `run_verification` uses the remediation's proof judges, and falls back to
-  the project's generic Primary Score. The reply's `judges` and `judgesSource` say which happened,
+  `judge_deployment_ids`, `run_verification` uses the fix's proof judges, and falls back to
+  the agent's generic Primary Score. The reply's `judges` and `judgesSource` say which happened,
   and `warnings` flags a weak verdict. When the judge isn't the one built for this failure, the
   verdict says nothing about the fix: run it again with a new version label and
   `"judge_deployment_ids": ["<the checked judge's deployment id>"]` (an LLM judge from
@@ -161,8 +170,8 @@ explicit decision and write it in the PR description.
 ## Step 8: Open the PR and report back
 
 Ask before pushing. Open the PR the way this repo normally does. In the description, include the
-remediation id, the verification run id, the pass rate with its item count, and the regression
-count. Then call `report_fix_status`:
+fix's `remediation_id`, the verification run id, the pass rate with its item count, and the
+regression count. Then call `report_fix_status`:
 
 ```json
 {"remediation_id": "<id>", "status": "verified", "work_state": "in_progress",
@@ -171,6 +180,13 @@ count. Then call `report_fix_status`:
 
 Neens accepts `verified` only because a verification run is now bound
 to the fix. Never use a force override to skip the proof.
+
+Then check whether an eval gate guards this failure mode: find it on `list_failure_modes` and read
+`gate.gateId`. If it is null, suggest a gate now that the fix is proven, so CI catches the failure
+if it comes back. No Neens tool creates one, so don't offer to: the user does it in the app, on the
+failure mode's card, with **Create eval**, then **Create eval gate**. The new gate starts paused;
+the user reviews the drafted judge, runs **Check evidence**, then switches **Enforced in CI** on.
+Guide: https://app.neens.ai/docs/guides/eval-gates/
 
 ## Step 9: After a human merges
 
@@ -181,12 +197,12 @@ this is the final check.
 
 ## Other routes
 
-- **Neens writes the patch.** When the project has a connected repository, `start_fix_run`, then
+- **Neens writes the patch.** When the agent has a connected repository, `start_fix_run`, then
   `get_fix_run`, has Neens draft the patch, verify it with repeated runs, and open a PR only if it
   passes. A person still merges.
 - **Prompt-only fixes without a preview.** `start_prompt_optimization` with the `failure_mode_id`
   searches for a better system prompt offline, by replaying recorded traces. Poll with
-  `get_prompt_optimization`. A winner comes back as a new remediation, which you then prove with
+  `get_prompt_optimization`. A winner comes back as a new fix, which you then prove with
   this skill like any other fix.
 
 ## Anti-patterns

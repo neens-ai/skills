@@ -38,8 +38,8 @@ SNAPSHOT = ROOT / "scripts" / "tools.snapshot.json"
 TOOL_SHAPED = re.compile(r"`([a-z]+(?:_[a-z0-9]+)+)`")
 JSON_OBJECT = re.compile(r"\{[^{}]*\"[a-z_]+\"\s*:[^{}]*\}")
 JSON_KEY = re.compile(r"\"([a-z_]+)\"\s*:")
-# Keys that live inside nested argument values (e.g. a model-sweep arm), not at the top level.
-NESTED_KEYS = {"label", "agent_connection_id"}
+# Keys that live inside nested argument values (a model-sweep arm, an `output_spec`), not at the top level.
+NESTED_KEYS = {"label", "agent_connection_id", "pass_label", "fail_label"}
 
 
 def fetch_tools(url: str, token: str | None) -> list[dict]:
@@ -131,6 +131,8 @@ FIELDS = {
     "failure_set", "is_gold", "required_data", "prompt_template", "baseline_kind",
     # code-judge error classes and evidence fields quoted from test_code_judge replies
     "invalid_result", "user_exception", "turn_count",
+    # eval-gate health warnings quoted from list_eval_gates replies
+    "judge_misses_failure", "never_in_ci",
     # standard OpenTelemetry / environment names used by instrument-agent
     "force_flush", "tracer_provider", "final_answer", "final_output",
     # an example tool name from the user's own agent

@@ -2,7 +2,7 @@
 name: triage-failures
 description: >
   Find out what is actually failing in an agent and why, from real traces. Reads Neens failure
-  modes and clusters, inspects representative traces, sorts each failure by where it lives
+  modes, inspects representative traces, sorts each failure by where it lives
   (agent-fixable, a downstream service, or a guardrail working as intended), and records the
   user's confirmed verdicts as ground truth. Use when the user asks what is failing, wants error
   analysis, or has failure modes nobody has reviewed. Do NOT use to write a judge or implement a
@@ -11,9 +11,11 @@ description: >
 
 # Triage Failures
 
-Turn Neens failure clusters into a short list of confirmed, located failures, with a trace id
-behind every claim. Clusters are hypotheses. A failure is confirmed when a person has read the
-evidence and agreed.
+Turn Neens failure modes into a short list of confirmed, located failures, with a trace id
+behind every claim. A discovered failure mode (one the clustering run found by itself, as
+`list_failure_modes` and `list_clusters` return them) is a hypothesis. A tracked failure mode is
+one the team named in its taxonomy and follows through a lifecycle. A failure is confirmed when a
+person has read the evidence and agreed.
 
 ## Step 1: Load the failure modes
 
@@ -43,8 +45,8 @@ For each mode:
    first step where the agent went wrong. Quote the specific evidence: the tool error, the
    fabricated field, the skipped step.
 4. `list_traces` with `{"cluster_id": …, "limit": 10}`, then `get_trace` on one or two members
-   that are **not** exemplars. If they fail differently, the cluster is mixed. Say so rather than
-   forcing one story onto it.
+   that are **not** exemplars. If they fail differently, the failure mode is mixed. Say so rather
+   than forcing one story onto it.
 
 If `get_trace` returns no `conversation` and no tool `arguments`/`result` (older Neens versions),
 you can see the structure of the run but not what was said. Classify only what the structure
@@ -65,9 +67,9 @@ Put every mode in exactly one of these classes, based on the evidence and not on
 | **Advisory (downstream/upstream)** | Timeouts, 5xx, pool exhaustion, a vendor outage in a tool the agent called correctly | Goes to the owning service's team. A prompt change here only hides the failure. |
 | **Working as intended** | A guardrail or policy blocked a request it should block | Nothing to fix. Consider excluding it from failure metrics. |
 
-If a remediation exists for the mode, `list_remediations` with `{"clusterId": …}` and then
-`get_remediation` show Neens's own `actionability` and `failureLocus`. Use them as a second opinion,
-and say so when you disagree with the evidence.
+If a fix exists for the mode (the API calls fixes remediations), `list_remediations` with
+`{"clusterId": …}` and then `get_remediation` show Neens's own `actionability` and
+`failureLocus`. Use them as a second opinion, and say so when you disagree with the evidence.
 
 ## Step 4: Confirm with the user
 
@@ -99,10 +101,16 @@ labels are just as valuable, because they are how a judge's false alarms get mea
 
 ## Step 6: Hand off
 
-For each **agent-fixable** mode, check for a remediation (`list_remediations` with
+For each **agent-fixable** mode, check for a fix (`list_remediations` with
 `{"clusterId": …}`). If there is none, call `generate_remediation` with `{"cluster_id": …}` and
 report its `actionability`. Then suggest `build-regression-set` for that mode, followed by
 `fix-failure`.
+
+If the mode's `gate.gateId` on `list_failure_modes` is null, no eval gate guards it. Note in the
+handoff that a confirmed failure mode with no gate is a candidate for one once it is fixed, so CI
+catches it if it comes back. No Neens tool creates a gate: the user does it in the app, on the
+failure mode's card, with **Create eval**, then **Create eval gate**. The new gate starts paused.
+Guide: https://app.neens.ai/docs/guides/eval-gates/
 
 For **advisory** modes, write two or three sentences the user can paste into a ticket for the
 owning team: the component, the error, how many sessions it hit, and two trace ids.
@@ -111,7 +119,7 @@ End with the ranked list of confirmed failures and the next skill to run for eac
 
 ## Anti-patterns
 
-- **Reporting cluster labels as findings without reading a single trace.** A label is a summary
+- **Reporting failure mode labels as findings without reading a single trace.** A label is a summary
   written by a model. The trace is the evidence.
 - **Recording labels the user never confirmed.** Ground truth that came from the agent is not
   ground truth.
