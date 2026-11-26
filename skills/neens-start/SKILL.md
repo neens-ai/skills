@@ -157,6 +157,11 @@ matches the agent's state.
 | The user is choosing between models | `choose-model` |
 | The user wants a status report: "how are we doing", weekly review, exec summary | `reliability-review` |
 | The user asks what Scout found or did, wants to change what Scout may do, or wants a recurring check ("every Monday, tell me…") | `scout` |
+| Token usage or cost is higher than expected, traces look huge, or the user suspects duplicate or bloated requests | `investigate-token-usage` |
+| The agent got slow, p95 latency rose, or requests time out | `investigate-latency` |
+| Quality dropped in production, a score fell, or something broke after a deploy, a model change or a date | `investigate-regression` |
+| A customer, colleague or ticket reports one specific bad conversation | `debug-user-report` |
+| The user asks which tool, MCP server, sub-agent or skill is failing, or what the agent complains about (papercuts) | `find-failing-component` |
 
 The usual order for a new agent is `instrument-agent` → `triage-failures` →
 `build-regression-set` → `write-judge` or `write-code-judge` → `fix-failure` → `gate-release`. An

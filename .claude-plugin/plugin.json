@@ -1,7 +1,7 @@
 {
   "name": "neens",
-  "version": "0.3.0",
-  "description": "Skills for running the Neens failure-to-fix loop from a coding agent: instrument an agent, triage failures, freeze regression sets, write and check LLM and code judges, prove fixes, gate releases, choose models, report reliability, and work with Scout.",
+  "version": "0.4.0",
+  "description": "Skills for running the Neens failure-to-fix loop from a coding agent: instrument an agent, triage failures, freeze regression sets, write and check LLM and code judges, prove fixes, gate releases, choose models, report reliability, work with Scout, and investigate token usage, latency, regressions, user reports and failing components.",
   "author": {
     "name": "Neens",
     "url": "https://neens.ai"
