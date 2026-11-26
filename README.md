@@ -4,7 +4,7 @@ Skills that teach a coding agent (Claude Code, Codex, Cursor and any agent that 
 [Neens](https://neens.ai) failure-to-fix loop on your own agent: find what is failing, prove a
 fix, and make sure it cannot come back.
 
-Neens exposes the loop as an MCP server of up to 89 tools (the set depends on which features your Neens has turned on). The tools are the raw capability.
+Neens exposes the loop as an MCP server of up to 109 tools (the set depends on which features your Neens has turned on). The tools are the raw capability.
 These skills are the judgment about how to use them: which call comes first, what counts as
 evidence, what a number means, and when to stop and ask a person.
 
@@ -44,6 +44,11 @@ Every skill in this repo follows eight rules:
 | [choose-model](skills/choose-model/SKILL.md) | "Which model?" Runs a pass^k model sweep and reads it honestly. |
 | [reliability-review](skills/reliability-review/SKILL.md) | "How are we doing?" A one-page, evidence-backed status report: targets, failure modes, the fix loop with owners, and which failure modes have an eval gate. |
 | [scout](skills/scout/SKILL.md) | "What did Scout find?" Reads Scout's findings, checks or changes what it may do, and sets standing instructions. |
+| [investigate-token-usage](skills/investigate-token-usage/SKILL.md) | "Why are we burning so many tokens?" Bands traces by size, reads the heaviest, and separates duplicate requests, growing history, tool loops, bloated prompts, oversized tool results and cache misses, with the share of tokens each explains. |
+| [investigate-latency](skills/investigate-latency/SKILL.md) | "Why is the agent slow?" Finds the step the time goes to, by component and by trace, and separates what the agent controls from what a downstream service owns. |
+| [investigate-regression](skills/investigate-regression/SKILL.md) | "It got worse after Tuesday." Compares failure modes, scores and components across windows and versions, and names the change behind the drop. |
+| [debug-user-report](skills/debug-user-report/SKILL.md) | "A customer says the agent told them X." Finds the trace, reads it to the first wrong step, says how many other conversations it hit, and turns it into a regression test. |
+| [find-failing-component](skills/find-failing-component/SKILL.md) | "Which tool is breaking us?" Ranks tools, MCP servers, sub-agents and skills by impact, reads the agent's own papercuts, and decides whether the contract, the agent or a downstream service is at fault. |
 
 `instrument-agent` covers Google ADK, AWS Bedrock AgentCore, Strands, LlamaIndex, Agno, smolagents,
 Pydantic AI, the Vercel AI SDK, LangGraph, the OpenAI Agents SDK, CrewAI and the Claude Agent SDK,
@@ -60,6 +65,11 @@ sit at each fix-loop stage (needs fix, fix proposed, in PR, verified, downstream
 rows with the ids the next call needs. It is read-only; rating rows is something people do in the
 Insights page, not agents. On a Neens server that does not have the tool yet, both skills fall back
 to surveying the loop with the individual list tools.
+
+The five `investigate-*`, `debug-*` and `find-*` skills start from a question someone asks about an
+agent in production, not from the loop. Each ends the same way: the evidence is frozen in a dataset,
+the fix is proven with `gate-release`, and a judge, alert or Scout instruction is offered so the
+problem is caught if it comes back.
 
 The usual path for a new agent:
 

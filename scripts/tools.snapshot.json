@@ -52,8 +52,33 @@
   }
  },
  {
+  "name": "add_rejected_fix_to_dataset",
+  "description": "Add a REJECTED fix (a PR closed without merging or with changes requested \u2014 review_id from get_fix_pr_reviews) to a dataset as 'known bad fix' cases: the inputs the fix was verified on plus the traces the rejected fix produced, tagged with the reviewer's reason, so future evals catch what the reviewer caught. Defaults to the fix's own regression dataset (dataset_id overrides). Idempotent. Fails with a clear message when the PR was not rejected or the fix has no recorded verification cases. Snapshot a new golden version for runs to see it.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "review_id": {
+     "type": "string",
+     "description": "Fix PR review id (required)."
+    },
+    "dataset_id": {
+     "type": "string",
+     "description": "Target dataset id (default: the fix's own)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "review_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "add_to_dataset",
-  "description": "Add traces/sessions to an existing dataset (by id or name). Returns how many were added vs skipped (duplicates). Use to grow a curated dataset over time.",
+  "description": "Add traces/sessions to an existing dataset (by id or name). Returns how many were added vs skipped (duplicates). Use to grow a curated dataset over time. Each new item gets a DRAFT of its expected tool calls copied from the trace (unreviewed, never graded): correct it with set_expected_tool_calls.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -77,6 +102,32 @@
    "additionalProperties": false,
    "required": [
     "dataset"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "attach_verification_run",
+  "description": "Record an EXISTING pre-prod run as a fix's proof \u2014 for a run you created yourself (create_preprod_run, or `neens eval run --create` in CI against an agent Neens cannot call) rather than with run_verification, which creates and attaches its own. The run must be in this agent and replay the remediation's proof golden dataset (the one get_fix_bundle's `proof` names), else the call is refused with the dataset it needs; a run still awaiting traces or scoring may be attached, a failed/cancelled one may not. Replaces any earlier proof run. The reply carries proofBound plus `warnings` when the run is not scored by the proof judge or froze an older golden version. Poll get_verification_run for its verdict.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "remediation_id": {
+     "type": "string",
+     "description": "Remediation id (required)."
+    },
+    "run_id": {
+     "type": "string",
+     "description": "Pre-prod run id to attach (required; from create_preprod_run or list_preprod_runs)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "remediation_id",
+    "run_id"
    ]
   },
   "annotations": {
@@ -163,7 +214,7 @@
  },
  {
   "name": "compare_preprod_runs",
-  "description": "Line up TWO OR MORE pre-prod runs against each other over the same frozen golden version: per-run pass rate, average score and cost/latency/step traits, plus a matrix keyed by golden prompt with one cell per run. Name one run as baseline_run_id and each row also reports which runs REGRESSED against it. Every run must snapshot the same dataset version (list_preprod_runs shows it) \u2014 otherwise the request is refused rather than aligned on mismatched prompts.",
+  "description": "Line up TWO OR MORE pre-prod runs against each other over the same frozen golden version: per-run pass rate, average score and cost/latency/step traits, plus a matrix keyed by golden prompt with one cell per run. Name one run as baseline_run_id and each row also reports which runs REGRESSED against it, and `regressionAnalysis` maps each other run to its severity-graded, grouped regressions against that baseline (as in get_preprod_comparison). Every run must snapshot the same dataset version (list_preprod_runs shows it) \u2014 otherwise the request is refused rather than aligned on mismatched prompts.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -423,7 +474,7 @@
  },
  {
   "name": "create_judge",
-  "description": "Create a judge (scorer) in the project. Default type llm_prompt: provide a prompt_template (use {target} for the trace/session), optional criteria, and required_data (input/output/messages/context/expected_output/metadata). Or type custom_python, a CODE judge, for a check that is a rule (a pattern, a schema, a word budget): provide code, and test it with test_code_judge BEFORE creating. The code is a top-level `def judge(target)` or `def judge(target, ctx)`; `target` is a dict of the required_data keys (output, input, messages, context, expected_output, metadata). It returns {\"score\": float} on the default 0\u20131 scale, or {\"label\": \u2026} when output_spec is binary/categorical (the shape MUST match output_spec, or every trace fails with an invalid return value); `ctx.skip(\"reason\")` skips a trace. The code runs in an isolated sandbox with NO network: external APIs, URLs and downloads all fail (requests imports but every call fails), nothing can be installed (only the runtime's packages), there are no secrets, and nothing persists between traces. The one way out is ctx.llm, with capabilities {\"llm\": true}. Needs a plan with code judges (Gold). list_code_runtimes lists the packages; list_code_environments lists custom environments with more (pass environment_id). Or type composite, to combine existing judges (list_judges) into one score: provide components, and test it with test_code_judge type=composite. A composite combines judges that already exist in this project into one 0\u20131 score; each component's score arrives normalized to 0\u20131 (a binary judge's pass = 1.0, fail = 0.0). method weighted_sum (default) averages the components by weight; method expression computes a formula over component metric keys (the judge name lowercased, non-letters \u2192 _; min, max, abs, round and + - * / allowed), e.g. \"min(cites_sources, polite_tone)\" with threshold 1.0 passes only when BOTH pass; method custom_python runs code `def combine(components, ctx)` (components = {metric_key: 0\u20131 or None}) returning {\"score\": float}. A composite has no output_spec, prompt_template or criteria. Creates the judge + version 1 (experimental). Follow with deploy_judge then run_eval to score traces.",
+  "description": "Create a judge (scorer) in the project. Default type llm_prompt: provide a prompt_template (use {target} for the trace/session), optional criteria, and required_data (input/output/messages/context/expected_output/metadata). Or type custom_python, a CODE judge, for a check that is a rule (a pattern, a schema, a word budget): provide code, and test it with test_code_judge BEFORE creating. The code is a top-level `def judge(target)` or `def judge(target, ctx)`; `target` is a dict of the required_data keys (output, input, messages, context, expected_output, metadata). It returns {\"score\": float} on the default 0\u20131 scale, or {\"label\": \u2026} when output_spec is binary/categorical (the shape MUST match output_spec, or every trace fails with an invalid return value); `ctx.skip(\"reason\")` skips a trace. The code runs in an isolated sandbox with NO network: external APIs, URLs and downloads all fail (requests imports but every call fails), nothing can be installed (only the runtime's packages), there are no secrets, and nothing persists between traces. The one way out is ctx.llm, with capabilities {\"llm\": true}. Needs a plan with code judges (Gold). list_code_runtimes lists the packages; list_code_environments lists custom environments with more (pass environment_id). Or type composite, to combine existing judges (list_judges) into one score: provide components, and test it with test_code_judge type=composite. A composite combines judges that already exist in this project into one 0\u20131 score; each component's score arrives normalized to 0\u20131 (a binary judge's pass = 1.0, fail = 0.0). method weighted_sum (default) averages the components by weight; method expression computes a formula over component metric keys (the judge name lowercased, non-letters \u2192 _; min, max, abs, round and + - * / allowed), e.g. \"min(cites_sources, polite_tone)\" with threshold 1.0 passes only when BOTH pass; method custom_python runs code `def combine(components, ctx)` (components = {metric_key: 0\u20131 or None}) returning {\"score\": float}. A composite has no output_spec, prompt_template or criteria. Or type pairwise, a BLIND A/B preference judge: provide criteria only; it is run with start_pairwise_comparison, never deployed, and is advisory. Creates the judge + version 1 (experimental). Follow with deploy_judge then run_eval to score traces.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -436,9 +487,10 @@
      "enum": [
       "llm_prompt",
       "custom_python",
-      "composite"
+      "composite",
+      "pairwise"
      ],
-     "description": "Default 'llm_prompt'. 'custom_python' = a code judge; 'composite' = combines existing judges."
+     "description": "Default 'llm_prompt'. 'custom_python' = a code judge; 'composite' = combines existing judges; 'pairwise' = compares two answers blind (criteria only)."
     },
     "scope": {
      "type": "string",
@@ -474,6 +526,10 @@
       "type": "string"
      },
      "description": "Data to feed the judge (default input/output/messages/metadata)."
+    },
+    "require_evidence": {
+     "type": "boolean",
+     "description": "llm_prompt: require every verdict to cite a verbatim quote of the trace (default true for a new judge); a verdict whose quotes are not in the trace is skipped as ungrounded_verdict."
     },
     "code": {
      "type": "string",
@@ -549,6 +605,14 @@
       "fail"
      ],
      "description": "composite: a trace missing a component score is skipped (default) or failed."
+    },
+    "both_orders": {
+     "type": "boolean",
+     "description": "pairwise: judge every pair in both A/B orders (default true); a verdict that flips with the order counts as a tie."
+    },
+    "include_reference": {
+     "type": "boolean",
+     "description": "pairwise: show the golden reference answer to the judge when the item has one (default true)."
     }
    },
    "additionalProperties": false,
@@ -585,6 +649,10 @@
       "type": "string"
      },
      "description": "Data to feed the judge (input/output/messages/context/expected_output/metadata)."
+    },
+    "require_evidence": {
+     "type": "boolean",
+     "description": "llm_prompt: true opts the judge into evidence-quoted verdicts (an ungrounded verdict is skipped, not scored); false turns it off. Omit to keep the current setting."
     },
     "code": {
      "type": "string",
@@ -670,6 +738,21 @@
      },
      "description": "Graders (default: the project's scoreable deployed judges)."
     },
+    "replay_mode": {
+     "type": "string",
+     "enum": [
+      "scripted"
+     ],
+     "description": "How multi-turn items are replayed: 'scripted' (the default) sends the recorded user turns in order on one conversation."
+    },
+    "scoring_grain": {
+     "type": "string",
+     "enum": [
+      "conversation",
+      "turn"
+     ],
+     "description": "'conversation' (default) grades the whole transcript; 'turn' also grades every reply and fails the item on any failing turn."
+    },
     "baseline_kind": {
      "type": "string",
      "enum": [
@@ -698,6 +781,26 @@
     "max_regressions": {
      "type": "integer",
      "description": "Gate: max allowed regressions."
+    },
+    "block_on": {
+     "type": "string",
+     "enum": [
+      "minor",
+      "moderate",
+      "severe"
+     ],
+     "description": "Gate: fail on a statistically SIGNIFICANT regression of this severity or worse (a noisy drop on a small set does not block)."
+    },
+    "max_regressions_per_failure_mode": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "Gate: max regressions allowed in any ONE failure mode."
+    },
+    "max_error_rate": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1,
+     "description": "Gate: share of items (0-1) allowed to error or not run before the run fails on coverage (default 0.1)."
     }
    },
    "additionalProperties": false,
@@ -776,7 +879,7 @@
  },
  {
   "name": "deploy_enrichment",
-  "description": "Turn a code (custom_python) enrichment on. trigger 'on_ingest' enriches newly ingested traces automatically (capped per day); 'manual' (default) enables it for runs started from the Neens app. Existing traces are not back-filled by this call.",
+  "description": "Turn a code (custom_python) enrichment on. trigger 'on_ingest' enriches newly ingested traces automatically (capped per day); 'manual' (default) enables it for runs started from the Neens app. sample_rate (0 < r <= 1, e.g. 0.1 = 10%) makes on_ingest enrich only that fraction of new traces, the same traces on every redelivery; omitted keeps the current rate (1 = all). Existing traces are not back-filled by this call.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -791,6 +894,12 @@
       "on_ingest"
      ],
      "description": "Default 'manual'."
+    },
+    "sample_rate": {
+     "type": "number",
+     "exclusiveMinimum": 0,
+     "maximum": 1,
+     "description": "Fraction of newly ingested traces on_ingest enriches (0.1 = 10%). Omit to keep the current rate."
     }
    },
    "additionalProperties": false,
@@ -867,7 +976,7 @@
  },
  {
   "name": "end_standing_instruction",
-  "description": "Stop one of your standing instructions for good: it never runs again and frees its place under your limit; past results stay readable. There is no undo \u2014 create a new one instead. This is the furthest an agent can go: no agent tool can DELETE an instruction. If the person asks to delete one, end it and tell them deleting is done by them in Settings \u2192 Ambient autonomy.",
+  "description": "Stop one of your standing instructions for good: it never runs again and frees its place under your limit; past results stay readable. There is no undo \u2014 create a new one instead. This is the furthest an agent can go: no agent tool can DELETE an instruction. If the person asks to delete one, end it and tell them deleting is done by them in Settings \u2192 This agent \u2192 Scout.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -949,6 +1058,27 @@
   },
   "annotations": {
    "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_ablation_run",
+  "description": "One ablation run: per removed section its verdict (earns_its_place | no_measurable_effect | removing_it_helps | pending | failed | no_data), quality delta with interval, the noise band, cost delta (null = unpriced) and latency delta, against the full prompt.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "ablation_id": {
+     "type": "string",
+     "description": "Ablation id (required)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "ablation_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
    "destructiveHint": false
   }
  },
@@ -1111,6 +1241,102 @@
   }
  },
  {
+  "name": "get_component",
+  "description": "Get one component (kind + name, from list_components): its measures, its most recent invocations (trace id, version, who invoked it, status, duration, error) and how many papercuts the agent filed about it. A component not invoked in the window is a not-found.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "kind": {
+     "type": "string",
+     "enum": [
+      "skill",
+      "mcp_server",
+      "sub_agent",
+      "tool"
+     ],
+     "description": "Component kind."
+    },
+    "name": {
+     "type": "string",
+     "description": "Component name (from list_components)."
+    },
+    "range": {
+     "type": "string",
+     "enum": [
+      "24h",
+      "7d",
+      "30d"
+     ],
+     "description": "Window (default 7d)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "kind",
+    "name"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_cost_quality_brief",
+  "description": "Read the one-line Cost & Quality brief for a page of this agent: what its cost and quality numbers say and the one next step. page is overview (spend split, unpriced models, a proven saving), agent (has this version's model been measured by a sweep, and is a cheaper model proven), judge (do the judges have enough human labels, does one disagree with them, is a judge model unpriced) or sweep (the verdict of one model sweep; needs sweep_id). Returns rule = {reasonCode, params, action} \u2014 params are the figures the page shows (USD, null = unpriced, never $0; percentages 0-100) \u2014 and scoutText when Scout has already worded it for these exact numbers (null otherwise; this tool never asks Scout to write). version defaults to the live version; use list_agent_versions for the labels. For page=overview it also returns overview: savings (state available / none_proven / partly_measured / not_measured / nothing_to_measure, monthlyUsd, and how many versions' agent models were tested and judges have enough labels), nextActions (the Do next list: one entry per cause \u2014 proven_saving, agent_untested, sweep_below_bar, judge_below_bar, judges_need_labels, model_unpriced, sweep_unpriced, sweep_void, sweep_unranked, sweep_no_quality, judge_single_model \u2014 ranked by what unlocks a saving, with count, the subjects and the action), and where the money goes per version (traces, agent and judge spend, per1kUsd per 1,000 traces, models, model evidence) and per model, with test and replay labels folded into one row, and pricing: partial + unpricedModels, the prompt-cache reads and writes inside the agent's input tokens (cacheReadInputTokens, cacheWriteInputTokens; spend is cache-aware, they bill at their own rates) and cacheEstimated = some cache tokens billed at the input rate because the model has no cache rate (cacheInputRateModels names them; the spend is then an estimate). page=overview also returns costPerOutcome: what one GOOD outcome (a resolved case or a successful task, as the project declared it; outcome names which, choices the declared ones, pass outcome to pick) cost in agent spend \u2014 usd over decidedCases with goodOutcomes, matchRatePct = share of cases with an outcome (lowCoverage under 50) \u2014 or usd null with a reason (no_outcome_declared, thin_sample, no_good_outcomes, no_spend_data, unpriced, no_cases, outcome_unavailable); each byVersion row carries perOutcomeUsd beside agentPerTraceUsd. page=judge also returns minLabels and judges = one row per judge: agreementPct with your human labels over ALL labels (ignores version and window; null below minLabels labelled traces \u2014 see labelled), flagRatePct and costPer1kUsd for the selected version + window, and nextStep = {step: label|fix_judge|keep|switch, reasonCode, params}. For page=agent it also returns agentModel: the model decision for that version (state switch/hold/untested/no_quality, reasonCode, confidence proven/likely, the sweep it rests on, the version's finished sweeps) and carriedForward \u2014 when the version has no sweep, the newest finished sweep measured on ANOTHER version of this agent, with that version, its age in days and its result code. Evidence from another version is not a verdict for this one: re-run it on this version.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "page": {
+     "type": "string",
+     "enum": [
+      "overview",
+      "agent",
+      "judge",
+      "sweep"
+     ],
+     "description": "Which Cost & Quality page the brief is for (required)."
+    },
+    "version": {
+     "type": "string",
+     "description": "A version label, '__unversioned__', or 'live' (default)."
+    },
+    "sweep_id": {
+     "type": "string",
+     "description": "The model sweep, for page=sweep."
+    },
+    "outcome": {
+     "type": "string",
+     "enum": [
+      "resolution",
+      "task_success"
+     ],
+     "description": "page=overview: which declared good outcome costPerOutcome is about (default: the committed one)."
+    },
+    "window": {
+     "type": "string",
+     "description": "Trailing window in days, e.g. '7d' (default) or '30d'."
+    },
+    "start": {
+     "type": "string",
+     "description": "Window start date YYYY-MM-DD (with end)."
+    },
+    "end": {
+     "type": "string",
+     "description": "Window end date YYYY-MM-DD."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "page"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "get_current_project",
   "description": "Report which project THIS connection is scoped to \u2014 its name, id, org and company \u2014 plus how the scope was set (credentialKind, scopePinned) and your role. A project API key and an SSO/OAuth MCP token each pin one project, so this is the answer to 'which project am I connected to?'. Call it FIRST in a session to confirm the project (e.g. after an SSO sign-in) before reading or writing. Returns projectId=null with a note when no single project is pinned (a user session picks its active project per request).",
   "inputSchema": {
@@ -1144,6 +1370,45 @@
     "limit": {
      "type": "integer",
      "description": "Max items (1\u201350, default 20)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "dataset"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_dataset_stats",
+  "description": "Read one dataset's health (the dataset page's summary): datasetType (static, snapshot = a filter dataset that grows only on Sync now, streaming = auto-synced hourly, cluster), item totals and items added in the last 7 days, expected-output coverage, expected tool calls reviewed vs draft (a draft is never graded), the session/trace/json mix, freshness (last edit, last + next sync, pendingMatches = matching sessions a sync would add), a growth timeline (axis added = when items joined, trace = when their source traces started; the creation backfill is reported separately; idleSince flags a streaming dataset that stopped growing), saved versions (which is golden), what replays it (eval gates, failure-mode regression sets, recent pre-prod runs with the version they pinned) and data-quality counts (items with no captured output, duplicate inputs, items whose source trace is gone). null means unknown or not applicable, never zero.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "dataset": {
+     "type": "string",
+     "description": "Dataset id or name (required)."
+    },
+    "range": {
+     "type": "string",
+     "enum": [
+      "24h",
+      "7d",
+      "30d",
+      "all"
+     ],
+     "description": "Timeline window (default 30d)."
+    },
+    "axis": {
+     "type": "string",
+     "enum": [
+      "added",
+      "trace"
+     ],
+     "description": "Timeline axis (default added)."
     }
    },
    "additionalProperties": false,
@@ -1196,7 +1461,7 @@
  },
  {
   "name": "get_eval_run",
-  "description": "Open one evaluation run by id: status, per-status task counts, the judge's verdict counts, and a page of its scored TASKS (target id, score, label, reason, error). `passed`/`failed` are verdicts over the `scored` targets and passRate = passed/scored (null when nothing was scored) \u2014 report THIS as the pass rate. `errored` counts targets that could not be scored. completionRate is the share of attempted targets that finished scoring, NOT a pass rate; successRate is a deprecated alias of completionRate. `taskTotal` is the run's whole size; `tasks` is at most `limit` rows from `offset`. Use after run_eval to see what a judge actually decided, per trace.",
+  "description": "Open one evaluation run by id: status, per-status task counts, the judge's verdict counts, and a page of its scored TASKS (target id, score, label, reason, error). `passed`/`failed` are verdicts over the `scored` targets and passRate = passed/scored (null when nothing was scored) \u2014 report THIS as the pass rate. `errored` counts targets that could not be scored. completionRate is the share of attempted targets that finished scoring, NOT a pass rate; successRate is a deprecated alias of completionRate. `taskTotal` is the run's whole size; `tasks` is at most `limit` rows from `offset`. Use after run_eval to see what a judge actually decided, per trace. A task's `evidence` is the verbatim trace text its verdict cited; `skipReason: ungrounded_verdict` means the judge's quotes were not in the trace, so no score was recorded.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1225,7 +1490,7 @@
  },
  {
   "name": "get_failure_mode",
-  "description": "Fetch one failure cluster/mode by id: label, description, root cause, remediation summary, up to 10 member session ids plus memberTotal (how many traces the mode holds \u2014 list_traces with cluster_id pages them all), and its distribution across agent versions (members per version vs that version's traffic, so a failure only one build produces stands out). Use after list_failure_modes to drill into a specific mode. fixabilityVerdict says whether a patch can fix the failure: `patchable` (a fix run verified a patch), `capability_limited` (a model sweep on the failure's golden set shows the current model below the bar while a stronger model clears it \u2014 recommend a model change via that sweep, do not start another fix run; Neens never switches models itself) or `unknown` (follow recommendation.action, e.g. run_model_sweep on recommendation.datasetId). `paths` groups the mode's recent sessions by how they fail (kind: retryLoop | retryOnce | recoveredRetry | recovered | stopsAtFailure | continuesAfter | noErrorStep | other), each with its count, the step it first fails at (and causeStep when that step received a tool's error), the retried step's run range, the most common error and example session ids for get_trace.",
+  "description": "Fetch one failure cluster/mode by id: label, description, root cause, remediation summary, up to 10 member session ids plus memberTotal (how many traces the mode holds \u2014 list_traces with cluster_id pages them all), and its distribution across agent versions (members per version vs that version's traffic, so a failure only one build produces stands out). Use after list_failure_modes to drill into a specific mode. fixabilityVerdict says whether a patch can fix the failure: `patchable` (a fix run verified a patch), `capability_limited` (a model sweep on the failure's golden set shows the current model below the bar while a stronger model clears it \u2014 recommend a model change via that sweep, do not start another fix run; Neens never switches models itself) or `unknown` (follow recommendation.action, e.g. run_model_sweep on recommendation.datasetId). `paths` groups the mode's recent sessions by how they fail (kind: retryLoop | retryOnce | recoveredRetry | recovered | stopsAtFailure | continuesAfter | noErrorStep | other), each with its count, the step it first fails at (and causeStep when that step received a tool's error), the retried step's run range, the most common error and example session ids for get_trace. componentOwner names the skill / MCP server / sub-agent / tool the mode's failures start inside (owner with share and sessions; null with a reason when the evidence is thin, split or unattributed) \u2014 target a fix there.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1259,6 +1524,32 @@
    "required": [
     "remediation_id"
    ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "get_fix_pr_reviews",
+  "description": "Read how human reviewers received this agent's fix pull requests: per PR its state (open|merged|closed_unmerged), the review decision (approved|changes_requested|commented|none), approvals, change requests, follow-up commits (iterations), the reviewers' rejection reason and a short timeline (comment text is PII-redacted). negativeLabel is 'rejected' (closed without merging) or 'changes_requested'. Also returns acceptance: the fix PR acceptance rate with n (null when n is 0 \u2014 unknown, not 0%). Filter with remediation_id or fix_run_id. Read it BEFORE implementing a fix: a rejected earlier fix's reason must be addressed by the next one.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "remediation_id": {
+     "type": "string",
+     "description": "Only this remediation's PRs."
+    },
+    "fix_run_id": {
+     "type": "string",
+     "description": "Only this fix run's PR."
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max PRs (1\u201320, default 10)."
+    }
+   },
+   "additionalProperties": false
   },
   "annotations": {
    "readOnlyHint": true,
@@ -1310,7 +1601,7 @@
  },
  {
   "name": "get_judge_runs",
-  "description": "List the eval runs of ONE judge, newest first: status, targets scored, average score and pass rate per run, plus an active/historic summary. Per run, `passed` and `failed` are the judge's verdicts over `scored` targets, `errored` counts targets that could not be scored, and passRate = passed/scored (null when nothing was scored). Use to find the run id to open with get_eval_run, or to see whether a judge has ever scored.",
+  "description": "List the eval runs of ONE judge, newest first: status, targets scored, average score and pass rate per run, plus an active/historic summary. Per run, `passed` and `failed` are the judge's verdicts over `scored` targets, `errored` counts targets that could not be scored, and passRate = passed/scored (null when nothing was scored). `ungrounded` counts verdicts discarded because the judge cited no evidence quote found in the trace (recorded as skips, never as pass or fail). Use to find the run id to open with get_eval_run, or to see whether a judge has ever scored.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1356,7 +1647,7 @@
  },
  {
   "name": "get_model_sweep_comparison",
-  "description": "DECIDE a model sweep: the N-way comparison of its arms and the answer \u2014 which model to ship. Returns one verdict sentence plus a per-arm leaderboard (pass rate WITH its sample size n and a 95% confidence interval, pass^k greens/k, p95 latency, cost per case, token-limit truncation rate over LLM calls that reported a finish reason, regressions vs the declared baseline arm) and a verdict PER AGENT, because the answer legitimately differs by agent. Four rules to respect when reporting the result: (1) comparable=false means the sweep is VOID \u2014 its arms did not run under identical conditions, so never rank them, whatever their numbers say; (2) costPerCaseUsd=null means UNPRICED, never free \u2014 such an arm cannot win 'cheapest' and appears in verdict.excluded with reasonCode 'unpriced' ('partially_priced' when only some cases had a price \u2014 its figure is a floor); cost.noUsageCases / cost.unknownModelCases say why cases are unpriced when no model rate is missing (traces without token counts or a model name); latency avgMs/p95Ms=null means no measured duration, not 0 ms; (3) rate=null means no data, not 0%; (4) an item counts as passed only when it passed EVERY repeat run \u2014 2 of 3 is not a pass, and flakyItems counts the difference. Read-only: computes nothing new and spends nothing.",
+  "description": "DECIDE a model sweep: the N-way comparison of its arms and the answer \u2014 which model to ship. Returns one verdict sentence plus a per-arm leaderboard (pass rate WITH its sample size n and a 95% confidence interval, pass^k greens/k, p95 latency, cost per case, token-limit truncation rate over LLM calls that reported a finish reason, regressions vs the declared baseline arm) and a verdict PER AGENT, because the answer legitimately differs by agent. Four rules to respect when reporting the result: (1) comparable=false means the sweep is VOID \u2014 its arms did not run under identical conditions, so never rank them, whatever their numbers say; (2) costPerCaseUsd=null means UNPRICED, never free \u2014 such an arm cannot win 'cheapest' and appears in verdict.excluded with reasonCode 'unpriced' ('partially_priced' when only some cases had a price \u2014 its figure is a floor); cost.noUsageCases / cost.unknownModelCases say why cases are unpriced when no model rate is missing (traces without token counts or a model name); latency avgMs/p95Ms=null means no measured duration, not 0 ms; (3) rate=null means no data, not 0%; (4) an item counts as passed only when it passed EVERY repeat run \u2014 2 of 3 is not a pass, and flakyItems counts the difference. decision.settle says what would settle a 'likely' answer: more_items gives addItems NEW golden-set items (each runs passK times per model) and holds only if the observed rate holds; not_settleable_by_items means no practical set would. sweepWarnings code 'provider_errors' names an arm whose cases largely failed at the model provider (HTTP 429 rate limits / 5xx): its pass rate and cost measure the provider, not the model \u2014 say so, and suggest re-running the sweep at a lower request rate or with more retries (decision.settle 'rerun_provider_errors'; cost.providerErrorCases are no-usage cases that need no price). Read-only: computes nothing new and spends nothing.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1385,7 +1676,7 @@
  },
  {
   "name": "get_next_actions",
-  "description": "What to do next on this agent: the ranked next best actions the person would see on the agent's card (a primary action and up to four more), already filtered to what this connection may see. Each action has id, kind, title, why (impact), target (targetType + targetId: a cluster is a failure mode for get_failure_mode), state, canRun (false means the caller lacks a capability in requires, or is an API key), and steps (the tools a run would call, or a link when it is done outside Neens). Pass action_id for one action in any state, including who ran, handed off or closed it. Org and company actions (scopeKind org or company) span agents: their parts list only the agents this connection can see, and their counts come from those parts. An action is rules-written; its finding (when present) is Scout's own investigation of it \u2014 agent-written, with its runId for get_ambient_run. Use it for \"what should I do next?\"; use get_action_inbox for what changed and the fix-loop queue.",
+  "description": "What to do next on this agent: the ranked next best actions the person would see on the agent's card (a primary action and up to four more), already filtered to what this connection may see. Each action has id, kind, title, why (impact), target (targetType + targetId: a cluster is a failure mode for get_failure_mode), state, canRun (false means the caller lacks a capability in requires, or is an API key), and steps (the tools a run would call, or a link when it is done outside Neens). Pass action_id for one action in any state, including who ran, handed off or closed it. Org and company actions (scopeKind org or company) span agents: their parts list only the agents this connection can see, and their counts come from those parts. An action is rules-written; its finding (when present) is Scout's own investigation of it \u2014 agent-written, with its runId for get_ambient_run. A retest_live_version action (test on release) has release: the new live version, the sweep it repeats, what is missing, and autoRun (what autonomy will do, e.g. ready, autonomy_off, no_budget, over_budget, unpriced); running it only starts that sweep. Use it for \"what should I do next?\"; use get_action_inbox for what changed and the fix-loop queue.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1417,8 +1708,38 @@
   }
  },
  {
+  "name": "get_pairwise_comparison",
+  "description": "Read a blind pairwise comparison by comparison_id (with a page of per-item raw verdicts in each order), or list the comparisons on a sweep_id / run_id. The result gives each side's win rate over DECISIVE pairs with a 95% Wilson interval, ties reported separately (orderInconsistentTies = verdicts that flipped with the order), and a state: insufficient_evidence (fewer than minDecisive decisive pairs), no_clear_preference (the interval includes 50%), or x_preferred / y_preferred. Never report a winner when state says otherwise, and never report a rate=null as 0%. humanAgreement compares the judge with blind human preference labels (Cohen's kappa; null when the labels cannot support one). Advisory, not a gate. Read-only.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "comparison_id": {
+     "type": "string",
+     "description": "Comparison id."
+    },
+    "sweep_id": {
+     "type": "string",
+     "description": "List the comparisons on a sweep."
+    },
+    "run_id": {
+     "type": "string",
+     "description": "List the comparisons on a pre-prod run."
+    },
+    "items_limit": {
+     "type": "integer",
+     "description": "Per-item verdicts to include (0\u2013100, default 25)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "get_preprod_comparison",
-  "description": "The candidate-vs-BASELINE verdict for one pre-prod run: the candidate's pass rate, the REGRESSION set (baseline passed, candidate failed), the new passes, and cost/latency/step deltas. The baseline is the run's own \u2014 a prior run or a prod window \u2014 and `baseline` overrides which. Two reporting rules: read `regressionCount`, not the length of the capped `regressions` evidence list; and a null passRate or null cost delta means NO DATA (nothing scored, nothing priced), never zero.",
+  "description": "The candidate-vs-BASELINE verdict for one pre-prod run: the candidate's pass rate, the REGRESSION set (baseline passed, candidate failed), the new passes, and cost/latency/step deltas. The baseline is the run's own \u2014 a prior run or a prod window \u2014 and `baseline` overrides which. `regressionAnalysis` says how badly and WHERE: per failure mode, scorer category and scorer, the pass-rate delta with its 95% interval, `change` (a regression/improvement only when the interval excludes zero, else unchanged \u2014 small golden sets are noisy) and a severity (minor/moderate/severe); quote its `summary`. `noise` is the measured run-to-run noise band: when `withinNoise` is true the overall delta is indistinguishable from noise, so do not call it a regression or an improvement; when `status` is unmeasured say so and offer measure_preprod_noise (it re-runs the run unchanged and costs money). The noise band never changes `change` or the CI verdict. Two reporting rules: read `regressionCount`, not the length of the capped `regressions` evidence list; and a null passRate or null cost delta means NO DATA (nothing scored, nothing priced), never zero.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1471,8 +1792,29 @@
   }
  },
  {
+  "name": "get_preprod_noise",
+  "description": "How much two IDENTICAL runs of a pre-prod run's golden set differ: its run-to-run noise band. status 'measured' (from k-repeats, sweep arms or an earlier re-run) gives flipRate and runIds; 'unmeasured' means only one such run exists, so no band is claimed \u2014 canMeasure says whether Neens can re-run it, and estimate what that costs (totalUsd null = unpriced). Spends nothing.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "run_id": {
+     "type": "string",
+     "description": "Pre-prod run id (required)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "run_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "get_preprod_run_items",
-  "description": "The run's FROZEN prompt list: one row per golden item with its `itemId`, input and expected output. The itemId is the stable id a harness stamps as `neens.dataset_item_id`, and the `item_id` get_preprod_trajectory diffs on.",
+  "description": "The run's FROZEN prompt list: one row per golden item with its `itemId`, input and expected output. The itemId is the stable id a harness stamps as `neens.dataset_item_id`, and the `item_id` get_preprod_trajectory diffs on. A multi-turn item carries `conversation`: its user turns in order with each turn's replay status, reply, error and (with per-turn scoring) verdict \u2014 use it to say WHICH turn of a conversation went wrong.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1616,7 +1958,7 @@
  },
  {
   "name": "get_verification_run",
-  "description": "Poll a verification (pre-prod) run by id for its proven verdict: status, whether it passed the gate, the failure reasons, regressions, pass rate, score aggregate, the gate and judges it was judged by, and \u2014 when items failed to run \u2014 captured/scored/errored counts, the top itemErrors and a failureClass (endpoint or judges). Use to check a run started by run_verification that hadn't finished yet.",
+  "description": "Poll a verification (pre-prod) run by id for its proven verdict: status, whether it passed the gate, the failure reasons, regressions, pass rate, score aggregate, the gate and judges it was judged by, and \u2014 when items failed to run \u2014 captured/scored/errored counts, the top itemErrors and a failureClass (endpoint, judges or scoring). An item error 'scoring never completed after N attempts' means the run settled without it. `coverage` says whether the pass rate covers enough of the items: a run where more than max_error_rate (default 10%) of items errored or never ran fails, with a reason naming the count. Use to check a run started by run_verification that hadn't finished yet.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1636,6 +1978,68 @@
   }
  },
  {
+  "name": "lint_prompt",
+  "description": "Lint an agent system prompt or a SKILL.md file with Neens's deterministic rules (no LLM): steps numbered with one objective each, commands followed by a check of their result, error-recovery guidance present, no 'try again' as recovery, no contradictory instructions, a token budget (estimated as characters / 4, default 5,000), and for skills the frontmatter name and a specific description plus the 500-line body guidance. Pass exactly one of: prompt_id (a saved prompt; version or label picks one, newest by default), trace_id (the system prompts that trace actually ran under), or text (pasted prompt or SKILL.md). Each finding has ruleId, severity (error|warning|info), line, the quoted text it fired on, a plain-language message and a concrete suggestion. Read-only: to turn a finding into a remediation, use the Create fix button on the prompt's page.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "prompt_id": {
+     "type": "string",
+     "description": "A saved prompt's id (Prompts page)."
+    },
+    "version": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "With prompt_id: the version to lint (default newest)."
+    },
+    "label": {
+     "type": "string",
+     "description": "With prompt_id: a deploy label such as production."
+    },
+    "trace_id": {
+     "type": "string",
+     "description": "A trace (session) id."
+    },
+    "text": {
+     "type": "string",
+     "description": "Prompt or SKILL.md text to lint."
+    },
+    "kind": {
+     "type": "string",
+     "enum": [
+      "auto",
+      "prompt",
+      "skill"
+     ],
+     "description": "For text: auto (default) detects SKILL.md frontmatter."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "list_ablation_runs",
+  "description": "This agent's ablation runs, newest first, with status and sections.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "limit": {
+     "type": "integer",
+     "description": "Max runs (1-50, default 20)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "list_agent_endpoints",
   "description": "List the agent endpoints this project can evaluate against: id, name, base URL, request shape (openai_chat | input_json), invoke path, model and auth mode. The id is the agent_connection_id that create_preprod_run (push mode), start_model_sweep arms and run_verification take. Credentials are never returned; hasCredential says whether a token is on file.",
   "inputSchema": {
@@ -1648,6 +2052,46 @@
     "limit": {
      "type": "integer",
      "description": "Max endpoints (1\u201350, default 25)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "list_agent_versions",
+  "description": "List this agent's versions \u2014 the labels its traces carry \u2014 with what is known about each: group (serving = production traffic in the window, tested = no traffic in the window but measured by a model sweep or seen in production before, test = only on pre-prod runs and their replays, unversioned = traces with no label), isLive, tracesInWindow, lastSeenAt, sweepCount and the latest sweep id. The window never removes a version from the list; it only sets each version's group and traffic count. Pass a versionLabel as version to get_cost_quality_brief, or '__unversioned__' for the unlabelled traces.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "window": {
+     "type": "string",
+     "description": "Trailing window in days, e.g. '7d' (default) or '30d'."
+    },
+    "start": {
+     "type": "string",
+     "description": "Window start date YYYY-MM-DD (with end)."
+    },
+    "end": {
+     "type": "string",
+     "description": "Window end date YYYY-MM-DD."
+    },
+    "group": {
+     "type": "string",
+     "enum": [
+      "serving",
+      "tested",
+      "test",
+      "unversioned"
+     ],
+     "description": "Only versions in this group."
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max versions (1\u2013100, default 25)."
     }
    },
    "additionalProperties": false
@@ -1770,6 +2214,43 @@
   }
  },
  {
+  "name": "list_components",
+  "description": "List the components this agent invoked in a window \u2014 skills, MCP servers, sub-agents and tools \u2014 with invocations, sessions reached, errorRate, latency p50/p95 (ms), versions seen, agentInvokedShare (the agent chose it vs a person typed its command; null when the trace did not record who), costUsd of the model calls made inside it (null = unpriced, never $0) and the components most often used with it. Rates are null over fewer than minInvocations invocations (thin). Cost and co-use are measured over the newest sessions (sampleComplete says whether that was every one). Use get_component for one component's recent invocations.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "range": {
+     "type": "string",
+     "enum": [
+      "24h",
+      "7d",
+      "30d"
+     ],
+     "description": "Window (default 7d)."
+    },
+    "kind": {
+     "type": "string",
+     "enum": [
+      "skill",
+      "mcp_server",
+      "sub_agent",
+      "tool"
+     ],
+     "description": "Only this kind."
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max components (1\u2013100, default 25)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "list_dataset_versions",
   "description": "List a dataset's immutable VERSIONS (snapshots), newest first, and name which one is golden. A pre-prod run and a model sweep both replay a frozen version, and create_preprod_run resolves the GOLDEN one when you give it no version \u2014 so check here first if a run refuses with 'dataset has no golden version'.",
   "inputSchema": {
@@ -1847,7 +2328,7 @@
  },
  {
   "name": "list_eval_gates",
-  "description": "List the project's eval gates \u2014 the failure modes CI replays on every build \u2014 with ONE reconciled status each (`health`): `state` is the newest CI check (passed | failed | no_data | pending | error | never_in_ci); `warnings` may hold `stale` (an enforced gate CI has not checked for `staleAfterDays`) and `judge_misses_failure` (the evidence check passes at or above the threshold, so the judge passes the failure itself and a CI pass proves nothing), worded in `warningMessages`. `evidenceCatchRate` (1 \u2212 evidencePassRate; null = not checked yet) is the share of the gate's own past failures the judge catches \u2014 higher is better, like the CI pass rate. Also returns the newest CI build's single `summaryVerdict`. Filter by status (active | paused) or needs_attention.",
+  "description": "List the project's eval gates \u2014 the failure modes CI replays on every build \u2014 with ONE reconciled status each (`health`): `state` is the newest CI check (passed | failed | no_data | pending | error | never_in_ci); `warnings` may hold `stale` (an enforced gate CI has not checked for `staleAfterDays`) and `judge_misses_failure` (the evidence check passes at or above the threshold, so the judge passes the failure itself and a CI pass proves nothing) and `saturated` (CI passed 100% in each of the last `saturateAfterRuns` runs, so the gate no longer tells good builds from bad; advisory only, suggest adding harder real failing cases), worded in `warningMessages`. `evidenceCatchRate` (1 \u2212 evidencePassRate; null = not checked yet) is the share of the gate's own past failures the judge catches \u2014 higher is better, like the CI pass rate. Also returns the newest CI build's single `summaryVerdict`. Filter by status (active | paused) or needs_attention.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2017,6 +2498,46 @@
   }
  },
  {
+  "name": "list_papercuts",
+  "description": "List the papercuts this agent filed about itself (neens.papercut span events: what it tried, expected, what happened, and its suggested fix), grouped \u2014 reports about the same component whose 'happened' text matches once ids, numbers, quoted values, paths and URLs are masked are one group. These are the AGENT'S OWN CLAIMS (source agent_reported), never a verdict: confirm against the traces before acting. Each group has groupKey, reports, sessions, the component, the latest report, linked failure modes and the remediation it was promoted to (null if none). Filter by component_kind + component_name.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "range": {
+     "type": "string",
+     "enum": [
+      "24h",
+      "7d",
+      "30d",
+      "90d"
+     ],
+     "description": "Window (default 30d)."
+    },
+    "component_kind": {
+     "type": "string",
+     "enum": [
+      "skill",
+      "mcp_server",
+      "sub_agent",
+      "tool"
+     ]
+    },
+    "component_name": {
+     "type": "string"
+    },
+    "limit": {
+     "type": "integer",
+     "description": "Max groups (1\u2013100, default 25)."
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "list_preprod_runs",
   "description": "List the project's pre-prod eval runs, newest first: status, version label, dataset + FROZEN dataset version id, gate, progress and regression count. The datasetVersionId is what tells you which runs are comparable \u2014 compare_preprod_runs requires runs that share one. Filter by status or dataset_id.",
   "inputSchema": {
@@ -2078,7 +2599,7 @@
  },
  {
   "name": "list_score_rows",
-  "description": "List INDIVIDUAL score rows \u2014 one per scored trace/session \u2014 with the judge's score, label and reason, filterable by metric_key, pass/fail `status`, score range, target, source or a specific eval `run_id`. This is the per-row read; list_scores is the aggregate rollup. Use to find WHICH traces a judge failed. `run_id` reads that run's own snapshot and cannot be combined with metric_key, source or range \u2014 that branch applies none of them, so it is refused rather than answered with unfiltered rows.",
+  "description": "List INDIVIDUAL score rows \u2014 one per scored trace/session \u2014 with the judge's score, label and reason, filterable by metric_key, pass/fail `status`, score range, target, source or a specific eval `run_id`. This is the per-row read; list_scores is the aggregate rollup. Use to find WHICH traces a judge failed. `evidence` holds the verbatim trace quotes the verdict cited \u2014 quote them when explaining a verdict. `run_id` reads that run's own snapshot and cannot be combined with metric_key, source or range \u2014 that branch applies none of them, so it is refused rather than answered with unfiltered rows.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2320,6 +2841,82 @@
   }
  },
  {
+  "name": "measure_preprod_noise",
+  "description": "Measure the noise band: re-run a completed PUSH pre-prod run UNCHANGED (same frozen items, endpoint, model, judges, prompt) so its delta can be read against real run-to-run spread. Spends money: refused when the estimate exceeds budget_usd or the platform ceiling; dry_run=true returns only the estimate. A run driven by your own harness cannot be re-run by Neens; run your harness again instead and the band is derived automatically.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "run_id": {
+     "type": "string",
+     "description": "Completed push run (required)."
+    },
+    "budget_usd": {
+     "type": "number",
+     "description": "Refuse when the estimate exceeds this."
+    },
+    "dry_run": {
+     "type": "boolean",
+     "description": "Estimate only, start nothing."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "run_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "promote_papercut",
+  "description": "Promote one papercut group (groupKey from list_papercuts) to a remediation in the backlog: titled from the report, typed from its component (tool / MCP server \u2192 a tool schema change, skill / sub-agent \u2192 a prompt change), linked to the failure mode its traces fell into, marked needs grounding because it rests on the agent's own report. Idempotent: a group already promoted returns the existing remediation (created false).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "group_key": {
+     "type": "string",
+     "description": "groupKey from list_papercuts."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "group_key"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "propose_ablation_fix",
+  "description": "Turn a 'removing_it_helps' section into a proposed prompt_change fix (before: the full prompt, after: without the section). It is verified and merged like any fix; nothing changes in the agent until a person merges it.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "ablation_id": {
+     "type": "string",
+     "description": "Ablation id (required)."
+    },
+    "arm_id": {
+     "type": "string",
+     "description": "The section's arm id from get_ablation_run (required)."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "ablation_id",
+    "arm_id"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
   "name": "rate_next_action",
   "description": "Rate one next action useful or not_useful (clear removes your rating), with an optional short note saying why. Use it after acting on, or deciding to skip, an action from get_next_actions. Only your own rating changes. A rating from an agent or an API key is stored as an agent rating: people see it, but it never changes how actions rank (counted is false).",
   "inputSchema": {
@@ -2357,7 +2954,7 @@
  },
  {
   "name": "record_fix_merge",
-  "description": "Tell Neens a fix PR was MERGED so it can start a post-merge efficacy close-out: Neens stamps a deploy event + a close-out watch and, after the post-deploy window, measures the fixed failure mode's real production volume before vs after and auto-verifies (or flags a regression of) the remediation. remediation_id is required; pr_url/commit_sha default from the remediation, merged_at defaults to now.",
+  "description": "Tell Neens a fix PR was MERGED so it can start a post-merge efficacy close-out: Neens stamps a deploy event + a close-out watch and, after the post-deploy window, measures the fixed failure mode's real production volume before vs after and auto-verifies (or flags a regression of) the remediation. remediation_id is required; pr_url/commit_sha default from the remediation, merged_at defaults to now. Optionally send the merged `diff` / `changed_files` so the change is readable in Neens.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2376,6 +2973,42 @@
     "merged_at": {
      "type": "string",
      "description": "ISO-8601 merge time (default now)."
+    },
+    "diff": {
+     "type": "string",
+     "description": "The fix's unified diff (`git diff` output), shown in Neens so people without access to the repository can read the change. Redacted and capped at 200 KB; over the cap the file list is kept and the diff is marked truncated."
+    },
+    "changed_files": {
+     "type": "array",
+     "description": "The changed files with line counts (derived from `diff` when omitted).",
+     "items": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "additions": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "deletions": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "status": {
+        "type": "string",
+        "enum": [
+         "added",
+         "modified",
+         "removed",
+         "renamed"
+        ]
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
     }
    },
    "additionalProperties": false,
@@ -2421,7 +3054,7 @@
     },
     "base_url": {
      "type": "string",
-     "description": "http(s) base URL of the agent (required)."
+     "description": "http(s) base URL of the agent (required). May carry a query string, which is kept at the end of every call; a #fragment is refused."
     },
     "request_shape": {
      "type": "string",
@@ -2433,7 +3066,7 @@
     },
     "invoke_path": {
      "type": "string",
-     "description": "Path appended to base_url, e.g. /invoke."
+     "description": "Path joined onto base_url's PATH, e.g. /invoke (default /chat/completions for openai_chat, none for input_json). https://h/agent?v=2 + /invoke calls https://h/agent/invoke?v=2. A query key may be set in base_url or invoke_path, not both."
     },
     "model": {
      "type": "string",
@@ -2446,6 +3079,10 @@
     "auth_token": {
      "type": "string",
      "description": "Optional bearer token; stored encrypted."
+    },
+    "accepts_system_prompt": {
+     "type": "boolean",
+     "description": "True when the agent uses a system prompt Neens sends (the leading system message, or input_json's system_prompt field). Ablation runs need it."
     }
    },
    "additionalProperties": false,
@@ -2482,7 +3119,7 @@
  },
  {
   "name": "report_fix_status",
-  "description": "Report a fix's progress back to Neens: set the remediation's lifecycle `status` (proposed|accepted|applied|verified|closed|regressed) and/or `work_state` (todo|in_progress|done|archived), and record the `pr_url` + `commit_sha` where the fix landed. remediation_id + at least one other field required. Use after opening a PR or applying a fix so the loop is auditable.",
+  "description": "Report a fix's progress back to Neens: set the remediation's lifecycle `status` (proposed|accepted|applied|verified|closed|regressed) and/or `work_state` (todo|in_progress|done|archived), and record the `pr_url` + `commit_sha` where the fix landed. Also send the fix's `diff` (and/or `changed_files`) so people who cannot open the PR (a private repository) can read the change in Neens. remediation_id + at least one other field required. Use after opening a PR or applying a fix so the loop is auditable.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2517,6 +3154,42 @@
     "commit_sha": {
      "type": "string",
      "description": "The commit the fix landed on."
+    },
+    "diff": {
+     "type": "string",
+     "description": "The fix's unified diff (`git diff` output), shown in Neens so people without access to the repository can read the change. Redacted and capped at 200 KB; over the cap the file list is kept and the diff is marked truncated."
+    },
+    "changed_files": {
+     "type": "array",
+     "description": "The changed files with line counts (derived from `diff` when omitted).",
+     "items": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "additions": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "deletions": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "status": {
+        "type": "string",
+        "enum": [
+         "added",
+         "modified",
+         "removed",
+         "renamed"
+        ]
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
     }
    },
    "additionalProperties": false,
@@ -2573,7 +3246,7 @@
  },
  {
   "name": "run_verification",
-  "description": "PROVE a fix works: trigger a REAL pre-prod PUSH evaluation that calls the given candidate endpoint (endpoint_url \u2014 a preview deployment/branch, plus invoke_path when the agent listens on a sub-path \u2014 or an existing agent_connection_id) with the remediation's golden dataset, scores every response, and gates it. version_label (the branch/commit/preview id) is required. Pass remediation_id to derive the golden dataset, gate thresholds and scoring judge from its proof gate and stamp the result back onto the fix; judge_deployment_ids picks the judges and baseline_run_id compares against a prior run on the same items. The reply echoes the effective gate, judges and baseline plus `warnings` when the verdict would be weak. Polls up to wait_seconds and returns pass/fail, reasons, pass rate, regressions and, when items failed to run, itemErrors + failureClass (endpoint = your endpoint never answered, judges = nothing was scored \u2014 neither is a verdict on the fix); if still running, poll get_verification_run with the runId.",
+  "description": "PROVE a fix works: trigger a REAL pre-prod PUSH evaluation that calls the given candidate endpoint (endpoint_url \u2014 a preview deployment/branch, plus invoke_path when the agent listens on a sub-path \u2014 or an existing agent_connection_id) with the remediation's golden dataset, scores every response, and gates it. version_label (the branch/commit/preview id) is required. Pass remediation_id to derive the golden dataset, gate thresholds and scoring judge from its proof gate and stamp the result back onto the fix; judge_deployment_ids picks the judges and baseline_run_id compares against a prior run on the same items. The reply echoes the effective gate, judges and baseline plus `warnings` when the verdict would be weak. Polls up to wait_seconds and returns pass/fail, reasons, pass rate, regressions and, when items failed to run, itemErrors + failureClass (endpoint = your endpoint never answered, judges = nothing was scored, scoring = scoring never completed \u2014 none is a verdict on the fix); if still running, poll get_verification_run with the runId.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2587,11 +3260,11 @@
     },
     "endpoint_url": {
      "type": "string",
-     "description": "Preview deployment URL to PUSH-eval. A path in the URL is used as-is (e.g. https://preview.example.com/eval/invoke)."
+     "description": "Preview deployment URL to PUSH-eval. A path in the URL is kept (e.g. https://preview.example.com/eval/invoke), and so is a query string: invoke_path is joined onto the URL's PATH, and the query stays at the end. A #fragment is refused (servers never receive it)."
     },
     "invoke_path": {
      "type": "string",
-     "description": "Path on endpoint_url to POST to, e.g. /eval/invoke (default: the URL itself for input_json, /chat/completions for openai_chat)."
+     "description": "Path joined onto endpoint_url's path, e.g. /eval/invoke (default: the URL itself for input_json, /chat/completions for openai_chat). https://h/p?v=2 + /chat/completions calls https://h/p/chat/completions?v=2. A query key may be set in endpoint_url or invoke_path, not both."
     },
     "agent_connection_id": {
      "type": "string",
@@ -2627,6 +3300,12 @@
      "type": "integer",
      "minimum": 0,
      "description": "Gate: max allowed regressions. Default: the remediation's proof gate (0)."
+    },
+    "max_error_rate": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1,
+     "description": "Gate: the share of items (0\u20131) allowed to error or not run before the run fails on coverage. Default 0.1."
     },
     "judge_deployment_ids": {
      "type": "array",
@@ -2665,6 +3344,75 @@
    "additionalProperties": false,
    "required": [
     "version_label"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "set_expected_tool_calls",
+  "description": "Record the CORRECT trajectory on one dataset item: the tools the agent should call, in what order, with what arguments. This is the ground truth the deterministic Tool Selection / Tool Sequence / Tool Arguments scorers grade pre-prod runs and fix verification against. add_to_dataset prefills a DRAFT from the trace's actual calls (expectedToolCallsReviewed: false, never graded) \u2014 read it with get_dataset_items, correct it, and save it here, which marks it reviewed. `expected_tool_calls` is a list of {name, args, match} where match is exact|subset|any (default exact); `order` is strict|relaxed|any (default relaxed: expected calls in order, extra calls allowed); an empty list means 'no tools should be called'. clear: true removes them (the scorers then skip the item); prefill_from_trace: true re-copies the draft from the item's trace. Edits the live item; snapshot a new golden version for runs to see it.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "dataset": {
+     "type": "string",
+     "description": "Dataset id or name (required)."
+    },
+    "item_id": {
+     "type": "string",
+     "description": "Item id from get_dataset_items (required)."
+    },
+    "expected_tool_calls": {
+     "type": "array",
+     "description": "The expected calls, in order (max 100).",
+     "items": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string"
+       },
+       "args": {
+        "type": "object"
+       },
+       "match": {
+        "type": "string",
+        "enum": [
+         "exact",
+         "subset",
+         "any"
+        ]
+       }
+      },
+      "required": [
+       "name"
+      ]
+     }
+    },
+    "order": {
+     "type": "string",
+     "enum": [
+      "strict",
+      "relaxed",
+      "any"
+     ],
+     "description": "How strictly the order is checked (default relaxed)."
+    },
+    "prefill_from_trace": {
+     "type": "boolean",
+     "description": "Replace with a draft copied from the trace."
+    },
+    "clear": {
+     "type": "boolean",
+     "description": "Remove the item's expected tool calls."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "dataset",
+    "item_id"
    ]
   },
   "annotations": {
@@ -2725,6 +3473,88 @@
    "required": [
     "session_id",
     "edited_system_prompt"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "start_ablation_run",
+  "description": "Does each part of the system prompt earn its tokens? Replays one frozen golden set through the agent's endpoint with the full prompt (full_repeats times, default 2, which also measures the noise band) and once per named section with that ONE section removed, then gives each section a verdict: earns_its_place, no_measurable_effect or removing_it_helps, with the quality delta (95% interval), cost delta and latency delta. Give the prompt as prompt_id (prompt management) or system_prompt (text). Sections are Markdown headings or <tag> blocks: call with dry_run=true first to list their keys and the cost estimate. The endpoint must accept a system prompt from Neens (register_agent_endpoint accepts_system_prompt). Only prompt sections can be ablated, not tools (your agent owns its tools). Spends money; refused above budget_usd. Never changes the live prompt. Poll get_ablation_run.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "description": "Label (required)."
+    },
+    "version_label": {
+     "type": "string",
+     "description": "Agent version under test (required)."
+    },
+    "agent_connection_id": {
+     "type": "string",
+     "description": "Registered endpoint (required)."
+    },
+    "dataset_id": {
+     "type": "string",
+     "description": "Golden dataset to replay (required)."
+    },
+    "dataset_version_id": {
+     "type": "string",
+     "description": "A frozen version instead of the golden."
+    },
+    "prompt_id": {
+     "type": "string",
+     "description": "Managed prompt to ablate."
+    },
+    "prompt_label": {
+     "type": "string",
+     "description": "Its label (default production)."
+    },
+    "prompt_version": {
+     "type": "integer",
+     "description": "Or a version number."
+    },
+    "system_prompt": {
+     "type": "string",
+     "description": "Or the prompt text itself."
+    },
+    "sections": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Section keys to remove, one arm each."
+    },
+    "full_repeats": {
+     "type": "integer",
+     "description": "Full-prompt repeats (1-5, default 2)."
+    },
+    "judge_deployment_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Graders (default: deployed judges)."
+    },
+    "budget_usd": {
+     "type": "number",
+     "description": "Refuse when the estimate exceeds this."
+    },
+    "dry_run": {
+     "type": "boolean",
+     "description": "List sections and estimate only; start nothing."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "name",
+    "version_label",
+    "agent_connection_id",
+    "dataset_id"
    ]
   },
   "annotations": {
@@ -2796,7 +3626,7 @@
  },
  {
   "name": "start_model_sweep",
-  "description": "Launch a MULTI-MODEL SWEEP: replay ONE frozen golden dataset version against N candidate model arms, k times each, and report pass^k PER ARM \u2014 the evidence for 'which model should we ship'. Every arm runs under IDENTICAL conditions (same frozen items, same judges, same k, same gate); only the model differs. Requires name, version_label, and arms. Two kinds of arm, never mixed in one sweep: PUSH arms {label, agent_connection_id} name a registered agent_http endpoint per model that Neens calls; RUNNER arms {label, model, runner_mode: 'runner'} need no endpoint \u2014 Neens NEVER calls in, the CALLER drives them: run `neens sweep run --sweep-id <id> -- <your agent command>`, which runs the agent once per arm \u00d7 repetition \u00d7 item with NEENS_EVAL_MODEL set to the arm's model and sends the traces. Use runner arms for a local or CI agent with no public URL. A runner sweep starts awaiting_traces and its arms list the child run ids. Give dataset_id (its golden version is used), dataset_version_id, or scenario_suite_id. Cost is bounded: the sweep is refused if it exceeds budget_usd or the deployment's arm/k/run ceilings. Returns the queued sweep \u2014 poll it with get_model_sweep. Preview the cost first with POST /model-sweeps/preview if you want an estimate before spending. If this call times out, do NOT relaunch: find the sweep with list_model_sweeps (q = its name) first.",
+  "description": "Launch a MULTI-MODEL SWEEP: replay ONE frozen golden dataset version against N candidate model arms, k times each, and report pass^k PER ARM \u2014 the evidence for 'which model should we ship'. Every arm runs under IDENTICAL conditions (same frozen items, same judges, same k, same gate); only the model differs. Requires name, version_label, and arms. Two kinds of arm, never mixed in one sweep: PUSH arms {label, agent_connection_id} name a registered agent_http endpoint per model that Neens calls; RUNNER arms {label, model, runner_mode: 'runner'} need no endpoint \u2014 Neens NEVER calls in, the CALLER drives them: run `neens sweep run --sweep-id <id> -- <your agent command>`, which runs the agent once per arm \u00d7 repetition \u00d7 item with NEENS_EVAL_MODEL set to the arm's model and sends the traces. Use runner arms for a local or CI agent with no public URL. A runner sweep starts awaiting_traces and its arms list the child run ids. Give dataset_id (its golden version is used), dataset_version_id, or scenario_suite_id. Cost is bounded: the sweep is refused if it exceeds budget_usd or the deployment's arm/k/run ceilings. Returns the queued sweep \u2014 poll it with get_model_sweep. sampleSize says what the golden set can prove: perfectScoreProves (20 items prove at most ~84%) and itemsForBar (35 for a 90% bar); code too_few means even a perfect score cannot prove the bar. Preview the cost first with POST /model-sweeps/preview if you want an estimate before spending. If this call times out, do NOT relaunch: find the sweep with list_model_sweeps (q = its name) first.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2867,6 +3697,30 @@
     "budget_usd": {
      "type": "number",
      "description": "Refuse to launch if the pre-flight estimate exceeds this."
+    },
+    "gate": {
+     "type": "object",
+     "description": "The quality bar every arm is judged against: min_pass_rate (0-1), max_regressions and max_error_rate (0-1, default 0.1: a run with more errored items is not green). Omit for the default; a re-run of an earlier sweep carries its gate.",
+     "properties": {
+      "min_pass_rate": {
+       "type": "number",
+       "minimum": 0,
+       "maximum": 1
+      },
+      "max_regressions": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "max_error_rate": {
+       "type": "number",
+       "minimum": 0,
+       "maximum": 1
+      },
+      "cost": {
+       "type": "object"
+      }
+     },
+     "additionalProperties": false
     }
    },
    "additionalProperties": false,
@@ -2874,6 +3728,67 @@
     "name",
     "version_label",
     "arms"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "start_pairwise_comparison",
+  "description": "Run a BLIND PAIRWISE comparison: a judge of type 'pairwise' (create one with create_judge, type='pairwise') reads each shared golden input with the two answers labelled A and B \u2014 never which model or version wrote them \u2014 and says which is better, or tie. Which side is A is randomized per item from a recorded seed, and by default every item is judged in BOTH orders; a pair whose verdict flips with the order counts as a tie. Give sweep_id (two arms of a model sweep; default the first two arms) OR run_id (a settled pre-prod run against its baseline, or baseline_run_id). SPENDS LLM BUDGET on the tenant's connection: 2 judge calls per item with both orders. Refused when the estimate exceeds budget_usd (default: the deployment cap) \u2014 an unpriced judge model has an unknown cost (null), never $0. ADVISORY: it never changes a gate's pass/fail. Poll with get_pairwise_comparison.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "judge_id": {
+     "type": "string",
+     "description": "A pairwise judge id (required)."
+    },
+    "sweep_id": {
+     "type": "string",
+     "description": "Compare two arms of this sweep."
+    },
+    "arm_x_id": {
+     "type": "string",
+     "description": "First arm (default position 0)."
+    },
+    "arm_y_id": {
+     "type": "string",
+     "description": "Second arm (default position 1)."
+    },
+    "attempt": {
+     "type": "integer",
+     "description": "Which repeat run per arm (1..k)."
+    },
+    "run_id": {
+     "type": "string",
+     "description": "Compare this settled pre-prod run to its baseline."
+    },
+    "baseline_run_id": {
+     "type": "string",
+     "description": "Explicit baseline run (same frozen dataset)."
+    },
+    "both_orders": {
+     "type": "boolean",
+     "description": "Judge each pair in both orders (default true). false halves the cost and loses the position-bias control."
+    },
+    "max_items": {
+     "type": "integer",
+     "description": "Cap on items compared."
+    },
+    "budget_usd": {
+     "type": "number",
+     "description": "Refuse to launch above this estimate."
+    },
+    "name": {
+     "type": "string",
+     "description": "Optional label."
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "judge_id"
    ]
   },
   "annotations": {
@@ -3186,7 +4101,7 @@
  },
  {
   "name": "update_ambient_settings",
-  "description": "Change this agent's Scout settings (admin). Send only what changes: level (off, suggest, investigate, act \u2014 act also lets it run the write tools in act_tools itself), act_tools (the full allowlist to store; [] allows none; only tools from actEligible: building a regression set, drafting a judge it never deploys, checking it against reviewers' verdicts, running an existing deployment), connection_id (the LLM connection investigations use; empty string = follow the assistant's), budget_usd + budget_period (day, week, month), max_runs_per_day, max_concurrent_runs, paused (true stops every investigation at its next step). To undo, call it again with the previous values from get_ambient_settings.",
+  "description": "Change this agent's Scout settings (admin). Send only what changes: level (off, suggest, investigate, act \u2014 act also lets it run the write tools in act_tools itself), act_tools (the full allowlist to store; [] allows none; only tools from actEligible: building a regression set, drafting a judge it never deploys, checking it against reviewers' verdicts, running an existing deployment), connection_id (the LLM connection investigations use; empty string = follow Scout chat's), budget_usd + budget_period (day, week, month), max_runs_per_day, max_concurrent_runs, paused (true stops every investigation at its next step). To undo, call it again with the previous values from get_ambient_settings.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3202,7 +4117,7 @@
     },
     "connection_id": {
      "type": "string",
-     "description": "LLM connection id for investigations; empty string follows the assistant's connection."
+     "description": "LLM connection id for investigations; empty string follows Scout chat's connection."
     },
     "budget_usd": {
      "type": "number",
