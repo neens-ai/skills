@@ -102,8 +102,8 @@ Short-lived processes such as scripts, CLIs and serverless handlers must call
 
 Neens can ingest a trace without these, but the fix loop cannot work well without them. It reads
 standard OTel GenAI and OpenInference attributes, per field, first match wins, and only from span
-and resource attributes. It does not read span events or OTel log records, so content a framework
-sends only as events never arrives.
+and resource attributes. It does not read span events (except `neens.papercut`, below) or OTel log
+records, so content a framework sends only as events never arrives.
 
 | What | Where Neens reads it |
 |---|---|
@@ -139,6 +139,65 @@ def handle_turn(conversation_id: str, message: str):
 A span with no kind is ignored when Neens builds the question and answer, which is why the
 fallback sets `gen_ai.operation.name` as well as the two values.
 
+### Name the components
+
+Neens measures each skill, MCP server, sub-agent and tool on its own, and names the component a
+failure mode starts inside. Tool spans (`gen_ai.tool.name` or OpenInference `TOOL`) and non-root
+agent spans (`gen_ai.agent.name` or `agent.name`) are attributed automatically. Skills and MCP
+servers have no standard attribute: set these on the span that runs one, or they never appear.
+
+| Attribute | Value |
+|---|---|
+| `neens.component.kind` | `skill`, `mcp_server`, `sub_agent` or `tool` (required) |
+| `neens.component.name` | A stable name, such as `refund-policy` (required) |
+| `neens.component.version` | The version that ran, such as `1.4.0` |
+| `neens.component.invoked_by` | `agent` when the agent chose it, `user` when a person asked (a slash command, a button) |
+
+```python
+with tracer.start_as_current_span(f"skill {name}", attributes={
+    "neens.component.kind": "skill",        # or "mcp_server" on the span around tools/call
+    "neens.component.name": name,
+    "neens.component.version": version,
+    "neens.component.invoked_by": "user" if from_slash_command else "agent",
+}):
+    return run_skill(name)  # model and tool calls inside belong to the skill
+```
+
+```ts
+tracer.startActiveSpan(`skill ${name}`, { attributes: {
+  'neens.component.kind': 'skill', 'neens.component.name': name,
+  'neens.component.version': version,
+  'neens.component.invoked_by': fromSlashCommand ? 'user' : 'agent',
+} }, async (span) => { try { return await runSkill(name) } finally { span.end() } })
+```
+
+There is no kind for a prompt section: it is text inside one model call, not a span.
+
+### Let the agent report papercuts
+
+A papercut is the agent writing down friction the traces do not show as an error: an empty search,
+an argument it had to guess. Expose a `file_papercut` tool to the agent that adds a `neens.papercut`
+event to the current span, then install the `log-papercut` skill so it knows when to call it.
+
+```python
+def file_papercut(happened: str, tried: str = "", expected: str = "", suggested_fix: str = "",
+                  component: tuple[str, str] | None = None) -> str:
+    attrs = {"neens.papercut.happened": happened}  # the only required field
+    for key, value in (("tried", tried), ("expected", expected), ("suggested_fix", suggested_fix)):
+        if value:
+            attrs[f"neens.papercut.{key}"] = value
+    if component:  # (kind, name) when the papercut is about another component than this span's
+        attrs["neens.component.kind"], attrs["neens.component.name"] = component
+    trace.get_current_span().add_event("neens.papercut", attrs)  # a no-op with no active span
+    return "filed"
+```
+
+In TypeScript, `trace.getActiveSpan()?.addEvent('neens.papercut', {...})` with the same keys. Only
+put strings in the event: an event with no `happened`, or a field that is not text, is dropped
+without failing the trace. Return the same short reply every time and cap the tool (for example at
+3 calls per turn), so it can never start a loop. Papercut text goes through the project's PII
+redaction like any span field. Guide: https://app.neens.ai/docs/guides/agent-papercuts/
+
 ## Step 5: Prove it
 
 1. Run the agent once on a realistic input that calls a tool. Use the user's normal run command,
@@ -155,6 +214,12 @@ fallback sets `gen_ai.operation.name` as well as the two values.
      session
    - the version label is present
    - each span appears once (two exporters send everything twice)
+   - if you declared skills or MCP servers: `list_components` with `{"range": "24h"}` lists each
+     one under its kind and name
+   - if the agent has `file_papercut`: run it once locally with `happened` set to
+     "instrumentation check, ignore", then `list_papercuts` with `{"range": "24h"}` shows that
+     group. Tell the user it will sit in the Papercuts tab. A Neens without these two tools
+     predates components: skip both checks and say so
 4. Report the trace id and a pass/fail line for each item. Fix every failing item before you finish.
 
 A trace read while its turn is still running can be partial: spans export as they end, so the outer
@@ -176,5 +241,7 @@ framework in Step 2.
   produced which trace.
 - **Instrumenting only the LLM client of a tool-using agent.** You get model calls without the
   tool calls between them, and most agent failures happen in the tool calls.
+- **A skill or MCP server with no `neens.component.*` attributes.** It never appears in Neens,
+  and failures inside it are pinned on the agent as a whole.
 - **Two exporters in one process.** A framework that already exports (ADK under `adk web`, Strands,
   AgentCore) plus a provider you added sends every span twice. Keep one.

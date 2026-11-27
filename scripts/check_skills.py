@@ -151,6 +151,8 @@ FIELDS = {
     "invalid_result", "user_exception", "turn_count",
     # eval-gate health warnings quoted from list_eval_gates replies
     "judge_misses_failure", "never_in_ci",
+    # componentOwner.reason quoted from get_failure_mode replies
+    "no_failing_span",
     # standard OpenTelemetry / environment names used by instrument-agent
     "force_flush", "tracer_provider", "final_answer", "final_output",
     # an example tool name from the user's own agent
@@ -167,6 +169,9 @@ SKILL_FIELDS = {
         "merge_fix_pr", "shared_failure", "uneven_coverage", "failing_connection",
         "unpriced_model", "budget_near_limit",
     },
+    # the papercut helper and its event field, which live in the user's own agent, not in Neens
+    "log-papercut": {"file_papercut", "suggested_fix"},
+    "instrument-agent": {"file_papercut", "suggested_fix"},
     # `status` / `result.state` values quoted from start/get_pairwise_comparison replies
     "choose-model": {
         "budget_stopped", "no_data", "insufficient_evidence", "no_clear_preference",

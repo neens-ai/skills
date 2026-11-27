@@ -163,6 +163,7 @@ matches the agent's state.
 | Quality dropped in production, a score fell, or something broke after a deploy, a model change or a date | `investigate-regression` |
 | A customer, colleague or ticket reports one specific bad conversation | `debug-user-report` |
 | The user asks which tool, MCP server, sub-agent or skill is failing, or what the agent complains about (papercuts) | `find-failing-component` |
+| The user wants their agent to report friction with its own tools (file papercuts) | `instrument-agent` to give the agent a papercut tool, then copy `log-papercut` into that agent |
 
 The usual order for a new agent is `instrument-agent` → `triage-failures` →
 `build-regression-set` → `write-judge` or `write-code-judge` → `fix-failure` → `gate-release`. An
