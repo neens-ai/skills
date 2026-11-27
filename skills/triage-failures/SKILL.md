@@ -54,6 +54,21 @@ proves, such as a tool error or a guardrail span that fired. For content failure
 fabricated answer, say plainly that you cannot verify them, and ask the user to open the trace in
 Neens (**Traces**, then the trace id) and tell you what the answer said.
 
+**The owning component.** `get_failure_mode` returns `componentOwner`: the skill, MCP server,
+sub-agent or tool the mode's failures start inside. When `owner` is set, name it with its sample
+size, "starts in the `refund-policy` skill in 6 of 8 sessions with a failing step" (`owner.sessions`
+of `sessionsWithFailingSpan`), and the `owner.versions` it ran at. When `owner` is null, give the
+`reason` (`thin`, `split`, `unattributed`, `no_failing_span`) and name no owner. A null
+`componentOwner` means the read failed: unknown, not "no owner". For the owner's own error rate,
+`get_component` with its `kind` and `name`; its rates are null below 5 invocations and its cost is
+null when unpriced, never 0.
+
+**Papercuts.** `list_papercuts` with
+`{"component_kind": "<kind>", "component_name": "<name>", "range": "30d"}` returns what the agent
+itself reported about that component. Quote the top one or two groups (their `reports` and `sessions`, and the latest `happened`) as agent-reported evidence next to the
+traces, never as a confirmed verdict. A group whose `failureModes` includes this mode is a lead to
+check in its traces. Neither tool on an older Neens: skip both paragraphs.
+
 Always filter by `cluster_id`. Never match on the mode's label with `issue_mode`, because labels
 change when clustering re-runs and the label match silently returns a different set.
 
@@ -75,8 +90,8 @@ If a fix exists for the mode (the API calls fixes remediations), `list_remediati
 
 Present one table:
 
-| Mode | Sessions | New | Class | What goes wrong (evidence) | Trace ids |
-|---|---|---|---|---|---|
+| Mode | Sessions | New | Class | Owning component (n) | What goes wrong (evidence) | Trace ids |
+|---|---|---|---|---|---|---|
 
 Then ask the user, one mode at a time, whether they agree with the class and the description.
 Offer to show the full trace for any row. The user can correct you; their answer is the verdict.
@@ -123,6 +138,7 @@ End with the ranked list of confirmed failures and the next skill to run for eac
   written by a model. The trace is the evidence.
 - **Recording labels the user never confirmed.** Ground truth that came from the agent is not
   ground truth.
+- **Quoting a papercut as the finding.** It is the agent's claim about itself. The trace decides.
 - **Treating a vendor outage as a prompt problem.** Rewriting the prompt around a 503 hides the
   outage and fixes nothing.
 - **"Fixing" a guardrail that worked.** A blocked request that should be blocked is a success.

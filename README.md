@@ -34,7 +34,8 @@ Every skill in this repo follows eight rules:
 | Skill | Use it when |
 |---|---|
 | [neens-start](skills/neens-start/SKILL.md) | You're not sure where to begin. Checks the connection, reads the next actions and the action inbox, routes you. |
-| [instrument-agent](skills/instrument-agent/SKILL.md) | No traces yet. Wires OpenTelemetry to Neens for your framework and proves a trace arrived intact. |
+| [instrument-agent](skills/instrument-agent/SKILL.md) | No traces yet. Wires OpenTelemetry to Neens for your framework, names your skills and MCP servers as components, and proves a trace arrived intact. |
+| [log-papercut](skills/log-papercut/SKILL.md) | Install it in the agent you observe. Tells that agent when to file a papercut (what it tried, expected, what happened, the fix it suggests) when a tool, skill or MCP server gets in its way. |
 | [triage-failures](skills/triage-failures/SKILL.md) | "What's failing?" Reads the evidence, locates each failure, records your verdicts. |
 | [build-regression-set](skills/build-regression-set/SKILL.md) | A failure is confirmed. Freezes its traces, plus passing controls, into a golden set. |
 | [write-judge](skills/write-judge/SKILL.md) | A failure needs an automated check that takes judgment. Writes a pass/fail LLM judge and measures it against you. |
@@ -65,6 +66,11 @@ sit at each fix-loop stage (needs fix, fix proposed, in PR, verified, downstream
 rows with the ids the next call needs. It is read-only; rating rows is something people do in the
 Insights page, not agents. On a Neens server that does not have the tool yet, both skills fall back
 to surveying the loop with the individual list tools.
+
+`log-papercut` is the one skill written for the agent you observe rather than for your coding
+agent: copy it into that agent's skills, next to the `file_papercut` tool `instrument-agent` sets
+up. `find-failing-component`, `triage-failures` and `reliability-review` read what it files, always
+as the agent's own claims, never as verdicts.
 
 The five `investigate-*`, `debug-*` and `find-*` skills start from a question someone asks about an
 agent in production, not from the loop. Each ends the same way: the evidence is frozen in a dataset,
