@@ -122,10 +122,12 @@ For each run:
    regression in one sentence from that diff, for example "the candidate skipped `lookup_order`
    and answered from memory".
 4. Read `noise` on the comparison: the run-to-run noise band, measured from identical re-runs.
-   `band` is how far two identical runs drift apart on these items; `withinNoise` says whether
-   the overall delta is inside it. `get_preprod_noise` with the run id reads the same band. If the
-   comparison has no `noise` field, this server predates the band: say so and read the
-   `regressionAnalysis` interval alone.
+   `band` is how far two identical runs drift apart on these items, as a pass-rate fraction (0.09
+   is ±9 pts); `withinNoise` says whether the overall delta is inside it. Outside the band is not
+   significance by itself: two runs that happened to agree on every item give a band of 0, so the
+   `regressionAnalysis` interval still decides whether a change is real. `get_preprod_noise`
+   with the run id reads the same band. If the comparison has no `noise` field, this server
+   predates the band: say so and read the `regressionAnalysis` interval alone.
 
 Rules for reading the numbers:
 
@@ -135,12 +137,13 @@ Rules for reading the numbers:
 - **Quote the noise band beside every pass-rate delta:** "+2/30 (+6.7 pts), noise band ±9 pts,
   within noise". A delta inside the band (`withinNoise` true) is indistinguishable from noise:
   never call it a regression or an improvement. If `noise` is null or its `status` is
-  `unmeasured`, say "noise not measured", never assume a band. Then offer to measure it: call
-  `measure_preprod_noise` with `{"run_id": "<run id>", "dry_run": true}` first and show the
-  user its `estimate`; only on their yes, call it again without `dry_run` (pass `budget_usd` as a
-  cap). It re-runs the run unchanged and costs money. It is not available for runs your own
-  harness drove (runner mode): run the harness again on the same version and golden set, and the
-  band fills in on its own.
+  `unmeasured`, say "noise not measured", never assume a band. Then, if `canMeasure` is true,
+  offer to measure it: call `measure_preprod_noise` with `{"run_id": "<measureRunId>", "dry_run": true}` first (the
+  run Neens picked to re-run, usually the baseline) and show the user its `estimate`; only on
+  their yes, call it again without `dry_run` (pass `budget_usd` as a cap). It re-runs that run
+  unchanged and costs money. If `canMeasure` is false, quote `measureBlockedReason`; for runs your
+  own harness drove (runner mode), run the harness again on the same version and golden set, and
+  the band fills in on its own.
 - **Write the item count next to every rate:** "27/30 (90%)". On 10 items, one item is 10 points.
 - **If captured items are fewer than the total,** some inputs errored at the endpoint. Name how
   many. A verdict on 12 of 30 items is not a verdict on the set.
@@ -194,9 +197,13 @@ which also measures the noise band) and once per section with that one section r
 prompt sections only, never tools: the agent owns its tools. If `start_ablation_run` does not
 exist on this server, say so and skip this step.
 
-1. The push endpoint must use the system prompt Neens sends. Register it again with
-   `"accepts_system_prompt": true` on `register_agent_endpoint`, only after the user confirms the
-   agent uses that prompt instead of its own.
+1. The push endpoint must use the system prompt Neens sends. Only after the user confirms the
+   agent uses that prompt instead of its own, register a separate endpoint for the ablation with
+   `register_agent_endpoint`: a new `name`, `"accepts_system_prompt": true`, and the same
+   `base_url`, `request_shape`, `invoke_path`, `model`, `output_jsonpath` and `auth_token` as the
+   existing one (`list_agent_endpoints` shows the first four; ask the user for the rest). Never
+   re-register the existing endpoint for this: re-registering replaces every option left out, and
+   the gate's own runs use it. Pass the new endpoint's `id` as `agent_connection_id` below.
 2. `start_ablation_run` with `"dry_run": true` first:
    `{"name": "ablate: <version label>", "version_label": "<branch>@<sha>", "agent_connection_id": "<conn id>", "dataset_id": "<dataset id>", "system_prompt": "<prompt text>", "dry_run": true}`
    (or `prompt_id` for a managed prompt). It lists the prompt's `sections` (their `key`s), the
@@ -209,7 +216,8 @@ exist on this server, say so and skip this step.
    `costDelta` and `latencyDeltaMs`: `earns_its_place` (the agent is worse without it),
    `no_measurable_effect` (this set cannot see an effect, which is not proof the section is
    useless) or `removing_it_helps`. `pending`, `failed` and `no_data` are not verdicts on the
-   section.
+   section. If `noiseMeasured` is false (for example `full_repeats` was 1), the verdict rests on
+   the interval alone: say so.
 
 "Removing it helps" is a proposal, never an edit. Do not touch the prompt. Offer to turn it into
 a fix and call `propose_ablation_fix` with the `ablation_id` and the section's `arm_id` (its `id`
