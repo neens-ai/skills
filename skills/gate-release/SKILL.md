@@ -179,7 +179,9 @@ changed file (`neens lint <path>` or `npx neens-eval lint <path>`; `lint_prompt`
 `prompt_id` or `trace_id` when there is no file) and list the errors and warnings with their
 lines. They do not change GO or NO-GO, unless the user's CI already makes lint blocking (a lint
 step exiting 1, findings at or above its `--fail-on`); then a failing lint is NO-GO and the report
-says so. Exit 2 means the file was not linted: say that, never "clean".
+says so. Exit 2 means the file was not linted: say that, never "clean". When lint is blocking
+and the changed file was not linted (exit 2, or no linter available), the verdict cannot be GO:
+report NO DATA for lint until it lints.
 
 Report a table with one row per dataset: dataset, items scored/total, pass rate (candidate vs
 baseline), noise band (or "not measured"), regressions, new passes, and cost and p95 latency

@@ -60,6 +60,10 @@ manages its settings and standing instructions. `write-judge` checks a draft jud
 existing verdicts with `check_judge_agreement` before deploying it, where the server has it.
 `choose-model` can add `start_pairwise_comparison`, a blind A/B preference between the top two
 arms, as supporting evidence; it never ranks the models or decides a gate.
+When a fix or a candidate changes a system prompt or a SKILL.md, `fix-failure` and
+`gate-release` lint it with `neens lint` (or `lint_prompt`) first. `fix-failure` fixes every
+`error` finding; in `gate-release` the findings are reported but never change the verdict, unless
+your CI already makes lint blocking.
 
 `neens-start` and `reliability-review` also read `get_action_inbox`, the same ranked "what to fix
 next" queue as the Insights page: what changed against the previous window, how many open items
