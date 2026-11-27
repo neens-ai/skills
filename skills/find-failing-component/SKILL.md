@@ -34,6 +34,10 @@ Call `get_current_project`, then in parallel:
 Rank by impact: error rate times sessions reached, not error rate alone. A tool failing 40% of 5
 calls matters less than one failing 3% of 4,000.
 
+If `list_components` returns nothing for the window, widen `range` to `30d` once. If it is
+still empty, say Neens records no components for this agent and stop; do not rank from failure
+modes alone.
+
 ## Step 2: Read the top two or three
 
 For each, `get_component` with its `kind` and `name` lists recent invocations: trace id, version,

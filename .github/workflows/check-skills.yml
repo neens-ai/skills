@@ -1,0 +1,27 @@
+name: check-skills
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Check skills against the Neens tool snapshot
+        run: python3 scripts/check_skills.py
+      - name: Install the Neens linter
+        # neens-eval ships `neens lint` (offline, deterministic, no API key). Pinned; bump on purpose.
+        run: python3 -m pip install "neens-eval==0.10.1"
+      - name: Lint skills/*/SKILL.md
+        # Exit 0 clean, 1 a finding at or above --fail-on (default error), 2 a file could not be linted.
+        # Warnings and info are printed but do not fail the build.
+        run: neens lint --fail-on error skills/*/SKILL.md

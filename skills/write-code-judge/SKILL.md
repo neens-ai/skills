@@ -138,8 +138,8 @@ It runs the unsaved code in the sandbox on up to 3 traces and saves nothing. Rea
 
 Every known trace must come back with the verdict you expected. Fix and test again until it does.
 A test run is capped at 10 seconds in total and about 20 runs a minute per person, and it counts
-against the company's daily code-execution budget. A 429 or "the code sandbox is busy" means retry
-in a few seconds.
+against the company's daily code-execution budget. A 429 or "the code sandbox is busy" means:
+retry once in a few seconds, and if it fails again, see "When code judges are not available".
 
 ## Step 5: Create, run, and check it against the user
 
@@ -197,7 +197,8 @@ PASS and FAIL definitions. Do not keep retrying, and do not deploy a judge that 
   (it is a project API key, or the user cannot configure judges). The message does not always
   say which. Ask the user to check their plan and role.
 - **"No code sandbox runner is available right now"**, or a busy sandbox: capacity, not your code.
-  Retry later. **"Daily code-execution budget used up"**: traces are skipped until 00:00 UTC.
+  Retry once in a few minutes; if it still fails, stop and tell the user. **"Daily
+  code-execution budget used up"**: traces are skipped until 00:00 UTC.
 
 Composite judges that combine scores with a Python `combine()`, code enrichments, and custom
 package environments use the same sandbox but are set up in the Neens UI (**Judges**,

@@ -31,9 +31,9 @@ environment. Search with what you have, narrowest first:
 3. Only a time: the same time bounds with `agent_name`, then read the candidates.
 
 If several traces match, show them (time, agent, first user turn) and ask the user which one.
-Never pick one silently. If nothing matches, widen the time window once, then say what you
-searched for and ask for more detail. The trace may not have been sent to Neens (sampling, a
-different environment): say that is possible.
+Never pick one silently. If the search returns nothing, widen the time window once, then say
+what you searched for and ask for more detail. The trace may not have been sent to Neens
+(sampling, a different environment): say that is possible.
 
 ## Step 2: Read it to the first wrong step
 
