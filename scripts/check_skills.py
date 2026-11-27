@@ -167,6 +167,11 @@ SKILL_FIELDS = {
         "merge_fix_pr", "shared_failure", "uneven_coverage", "failing_connection",
         "unpriced_model", "budget_near_limit",
     },
+    # ablation `verdict` values from get_ablation_run, and the fix kind propose_ablation_fix makes
+    "gate-release": {
+        "earns_its_place", "no_measurable_effect", "removing_it_helps", "no_data",
+        "prompt_change",
+    },
 }
 
 
