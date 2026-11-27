@@ -97,7 +97,7 @@ the same golden items. It is supporting evidence: pass^k, cost and latency stay 
 a pairwise result never decides a gate or overturns the Step 4 decision.
 
 1. It needs a pairwise judge (`list_judges`, or create one with `write-judge`). Say whether it
-   meets the calibration bar in `write-judge` ("A pairwise judge", item 4); until it does, call
+   meets the calibration bar in `write-judge` ("A pairwise judge"); until it does, call
    its preference uncalibrated and weak evidence.
 2. **Cost first.** It spends LLM budget on the user's connection: two judge calls per item with
    both orders. Tell the user and ask for a ceiling. Call `start_pairwise_comparison` with
