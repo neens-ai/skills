@@ -180,18 +180,23 @@ an argument it had to guess. Expose a `file_papercut` tool to the agent that add
 event to the current span, then install the `log-papercut` skill so it knows when to call it.
 
 ```python
-def file_papercut(tried: str, expected: str, happened: str, suggested_fix: str) -> None:
-    trace.get_current_span().add_event("neens.papercut", {
-        "neens.papercut.tried": tried, "neens.papercut.expected": expected,
-        "neens.papercut.happened": happened,  # the only required field
-        "neens.papercut.suggested_fix": suggested_fix,
-    })
+def file_papercut(happened: str, tried: str = "", expected: str = "", suggested_fix: str = "",
+                  component: tuple[str, str] | None = None) -> str:
+    attrs = {"neens.papercut.happened": happened}  # the only required field
+    for key, value in (("tried", tried), ("expected", expected), ("suggested_fix", suggested_fix)):
+        if value:
+            attrs[f"neens.papercut.{key}"] = value
+    if component:  # (kind, name) when the papercut is about another component than this span's
+        attrs["neens.component.kind"], attrs["neens.component.name"] = component
+    trace.get_current_span().add_event("neens.papercut", attrs)  # a no-op with no active span
+    return "filed"
 ```
 
-In TypeScript, `trace.getActiveSpan()?.addEvent('neens.papercut', {...})` with the same keys. A
-papercut about another component than the current span's adds `neens.component.kind` and
-`neens.component.name` to the event. An event with no `happened` is dropped without failing the
-trace. Guide: https://app.neens.ai/docs/guides/agent-papercuts/
+In TypeScript, `trace.getActiveSpan()?.addEvent('neens.papercut', {...})` with the same keys. Only
+put strings in the event: an event with no `happened`, or a field that is not text, is dropped
+without failing the trace. Return the same short reply every time and cap the tool (for example at
+3 calls per turn), so it can never start a loop. Papercut text goes through the project's PII
+redaction like any span field. Guide: https://app.neens.ai/docs/guides/agent-papercuts/
 
 ## Step 5: Prove it
 
