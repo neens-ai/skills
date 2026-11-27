@@ -6,7 +6,9 @@ description: >
   gates a release. Use when a failure mode needs an automated check, when the user asks for a
   judge, scorer or evaluator, or when a judge's verdicts are in doubt. Do NOT use for failures a
   plain filter already catches (errors, timeouts), or for ones a rule decides (a schema, a
-  required tool call, a pattern, a threshold); those go to `write-code-judge`. See Step 2.
+  required tool call, a pattern, a threshold); those go to `write-code-judge`. See Step 2. Also
+  covers the advisory blind pairwise (A/B preference) judge, for choosing between two acceptable
+  answers, and its calibration against blind human pair labels.
 ---
 
 # Write Judge
@@ -40,6 +42,10 @@ Pick the cheapest check that decides the failure exactly:
   a Python judge decides it the same way every time, with no model call.
 - **Judgment.** An answer not supported by the tool results, the wrong action for the request, a
   missed policy step, the wrong tone for the context. Write an LLM judge with this skill.
+- **A preference, not a failure.** Both answers are acceptable and the question is which one is
+  better: two models, or a prompt change against its baseline. A pass/fail judge passes both. Write
+  a pairwise judge (see "A pairwise judge" below). It is advisory and never replaces the pass/fail
+  check: a failure mode still gets a binary judge, and that stays the default.
 
 ## Step 3: Write the prompt
 
@@ -154,6 +160,38 @@ call, and that costs money. On a yes, call `deploy_judge` with
 `{"judge_id": …, "trigger_policy": "on_new_trace", "success_threshold": 0.5}`. Each deployment in
 `list_judges` shows its `dailyCap`, the most traces it scores per UTC day. A project admin can
 change the project's cap with `set_scoring_budget`; a project API key can only read it.
+
+## A pairwise judge (A/B preference)
+
+A pairwise judge reads one golden input with two answers, labelled A and B, and says which is
+better or calls a tie. It never sees which model or version wrote them. It is run only on a
+comparison, never deployed to score traces, and it never changes a gate.
+
+1. `create_judge` with `{"name": "pw-<what it prefers>", "type": "pairwise", "criteria": "<what makes one answer better>"}`.
+   Criteria only: a prompt template, code or components are refused. Name observable qualities
+   ("resolves the request, states every policy constraint that applies") and add "do not prefer
+   an answer for being longer". Leave `both_orders` at its default (true) and
+   `include_reference` on when the golden items have reference answers.
+2. Run it with `start_pairwise_comparison` on a sweep or a pre-prod run (`choose-model` Step 5).
+3. **Calibrate it before anyone trusts it.** Human preference labels cannot be entered through
+   MCP; they need a person. Ask the user to open the finished comparison in the app and choose
+   **Label pairs blind**: each input with its two answers as A and B, sides and the judge's
+   verdict hidden, answered **A is better**, **Tie** or **B is better**. Ask for at least 10
+   labels, not all the same answer. Several reviewers may label; each item's majority counts, and a split counts as a tie.
+4. `get_pairwise_comparison` with `{"comparison_id": …}`. `humanAgreement` holds `n`,
+   `agreementRate`, `decisiveAgreementRate` and `cohensKappa`. Report κ with its `n`.
+   `cohensKappa` null means the labels hold a single answer, so chance agreement cannot be
+   measured: ask for more varied labels, never report it as 0. `n` 0 means nobody has labelled
+   yet (`labeledItems` counts the labelled items).
+
+Hold it to the pass/fail bar in Step 5: at least 10 labelled items with more than one answer,
+and at most 2 in 10 wrong on the pairs the people found decisive (`decisiveAgreementRate` at
+least 0.8), with κ above 0. Until a comparison's `humanAgreement` meets that, call the judge's
+preferences uncalibrated in every report. Below it, the criteria do not describe what people
+prefer: rewrite them and compare again. Labels belong to the comparison they were given on, so
+a new comparison needs new labels before it counts as calibrated. If
+`start_pairwise_comparison` does not exist on this server, it has no pairwise judges: say so and
+compare the two candidates on pass/fail judges only.
 
 ## Report
 

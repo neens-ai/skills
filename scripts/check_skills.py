@@ -167,6 +167,11 @@ SKILL_FIELDS = {
         "merge_fix_pr", "shared_failure", "uneven_coverage", "failing_connection",
         "unpriced_model", "budget_near_limit",
     },
+    # `status` / `result.state` values quoted from start/get_pairwise_comparison replies
+    "choose-model": {
+        "budget_stopped", "no_data", "insufficient_evidence", "no_clear_preference",
+        "x_preferred", "y_preferred",
+    },
     # ablation `verdict` values from get_ablation_run, and the fix kind propose_ablation_fix makes
     "gate-release": {
         "earns_its_place", "no_measurable_effect", "removing_it_helps", "no_data",
