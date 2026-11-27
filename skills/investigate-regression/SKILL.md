@@ -35,6 +35,10 @@ Call `get_current_project`, then in parallel:
 Ask the user when they first noticed and what they compare against, if they did not say. Pick the
 two windows (or two versions) to compare and keep them fixed for the rest of the skill.
 
+If one of these calls fails, name it in the report and work from the others. If the inbox and
+the failure modes both show nothing new for the window, there is no regression to attribute: say
+so and stop.
+
 ## Step 2: Is it real?
 
 Before attributing anything, check the drop is larger than the noise:

@@ -38,11 +38,11 @@ Every skill in this repo follows eight rules:
 | [log-papercut](skills/log-papercut/SKILL.md) | Install it in the agent you observe. Tells that agent when to file a papercut (what it tried, expected, what happened, the fix it suggests) when a tool, skill or MCP server gets in its way. |
 | [triage-failures](skills/triage-failures/SKILL.md) | "What's failing?" Reads the evidence, locates each failure, records your verdicts. |
 | [build-regression-set](skills/build-regression-set/SKILL.md) | A failure is confirmed. Freezes its traces, plus passing controls, into a golden set. |
-| [write-judge](skills/write-judge/SKILL.md) | A failure needs an automated check that takes judgment. Writes a pass/fail LLM judge and measures it against you. |
+| [write-judge](skills/write-judge/SKILL.md) | A failure needs an automated check that takes judgment. Writes a pass/fail LLM judge and measures it against you; for two acceptable answers, an advisory blind pairwise judge calibrated on your pair labels. |
 | [write-code-judge](skills/write-code-judge/SKILL.md) | A rule decides the failure (a schema, a required tool call, a pattern, a limit). Writes a sandboxed Python judge, tests it on real traces, and measures it against you. |
-| [fix-failure](skills/fix-failure/SKILL.md) | Time to fix. Implements the fix in your repo, proves it, and reports PR and proof back. |
-| [gate-release](skills/gate-release/SKILL.md) | "Can we ship this?" Replays every regression set against the candidate and returns GO, NO-GO or NO DATA. |
-| [choose-model](skills/choose-model/SKILL.md) | "Which model?" Runs a pass^k model sweep and reads it honestly. |
+| [fix-failure](skills/fix-failure/SKILL.md) | Time to fix. Implements the fix in your repo (answering earlier reviewers' rejections), proves it, and reports PR, proof and review state back. |
+| [gate-release](skills/gate-release/SKILL.md) | "Can we ship this?" Replays every regression set against the candidate, reads each delta against its noise band, and returns GO, NO-GO or NO DATA. Can ablate a prompt change section by section. |
+| [choose-model](skills/choose-model/SKILL.md) | "Which model?" Runs a pass^k model sweep and reads it honestly, with an optional advisory blind pairwise comparison of the top two. |
 | [reliability-review](skills/reliability-review/SKILL.md) | "How are we doing?" A one-page, evidence-backed status report: targets, failure modes, the fix loop with owners, and which failure modes have an eval gate. |
 | [scout](skills/scout/SKILL.md) | "What did Scout find?" Reads Scout's findings, checks or changes what it may do, and sets standing instructions. |
 | [investigate-token-usage](skills/investigate-token-usage/SKILL.md) | "Why are we burning so many tokens?" Bands traces by size, reads the heaviest, and separates duplicate requests, growing history, tool loops, bloated prompts, oversized tool results and cache misses, with the share of tokens each explains. |
@@ -59,6 +59,12 @@ plus plain OpenTelemetry for anything else.
 when Scout (the Neens background agent) is turned on. `scout` reads what Scout investigated and
 manages its settings and standing instructions. `write-judge` checks a draft judge against your
 existing verdicts with `check_judge_agreement` before deploying it, where the server has it.
+`choose-model` can add `start_pairwise_comparison`, a blind A/B preference between the top two
+arms, as supporting evidence; it never ranks the models or decides a gate.
+When a fix or a candidate changes a system prompt or a SKILL.md, `fix-failure` and
+`gate-release` lint it with `neens lint` (or `lint_prompt`) first. `fix-failure` fixes every
+`error` finding; in `gate-release` the findings are reported but never change the verdict, unless
+your CI already makes lint blocking.
 
 `neens-start` and `reliability-review` also read `get_action_inbox`, the same ranked "what to fix
 next" queue as the Insights page: what changed against the previous window, how many open items
@@ -177,6 +183,14 @@ NEENS_TOKEN=... python3 scripts/check_skills.py \
 ```
 
 Run it whenever Neens ships a new MCP version. It needs only the Python standard library.
+
+CI (`.github/workflows/check-skills.yml`) runs it on every pull request and push to main, then
+lints every skill with the Neens prompt linter, which fails the build only on an `error` finding:
+
+```bash
+pip install "neens-eval==0.10.1"
+neens lint skills/*/SKILL.md          # or: npx neens-eval@0.10.1 lint skills/*/SKILL.md
+```
 
 ## Writing your own
 

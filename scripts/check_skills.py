@@ -172,6 +172,16 @@ SKILL_FIELDS = {
     # the papercut helper and its event field, which live in the user's own agent, not in Neens
     "log-papercut": {"file_papercut", "suggested_fix"},
     "instrument-agent": {"file_papercut", "suggested_fix"},
+    # `status` / `result.state` values quoted from start/get_pairwise_comparison replies
+    "choose-model": {
+        "budget_stopped", "no_data", "insufficient_evidence", "no_clear_preference",
+        "x_preferred", "y_preferred",
+    },
+    # ablation `verdict` values from get_ablation_run, and the fix kind propose_ablation_fix makes
+    "gate-release": {
+        "earns_its_place", "no_measurable_effect", "removing_it_helps", "no_data",
+        "prompt_change",
+    },
 }
 
 

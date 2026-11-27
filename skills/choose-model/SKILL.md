@@ -5,7 +5,8 @@ description: >
   golden set against each candidate model under identical conditions, repeats each item k times,
   and ranks the models on pass^k, cost and latency, with confidence intervals. Use when the user
   asks which model to use, whether a cheaper or newer model is good enough, or wants a model
-  comparison. Do NOT use to evaluate a code or prompt change; use `gate-release`.
+  comparison. Can add an advisory blind pairwise comparison of the top two arms' answers. Do NOT
+  use to evaluate a code or prompt change; use `gate-release`.
 ---
 
 # Choose Model
@@ -88,6 +89,47 @@ and let cost and latency decide. Recommend a switch only when the candidate is a
 the incumbent with no regressions, or when the user explicitly accepts a quality drop in exchange
 for a cost saving.
 
+## Step 5 (optional): Compare the top two blind
+
+Pass^k says whether each answer is good enough, not which of two acceptable answers is better.
+When the top two arms both clear the bar, offer a blind pairwise comparison of their answers on
+the same golden items. It is supporting evidence: pass^k, cost and latency stay the ranking, and
+a pairwise result never decides a gate or overturns the Step 4 decision.
+
+1. It needs a pairwise judge (`list_judges`, or create one with `write-judge`). Say whether it
+   meets the calibration bar in `write-judge` ("A pairwise judge"); until it does, call
+   its preference uncalibrated and weak evidence.
+2. **Cost first.** It spends LLM budget on the user's connection: two judge calls per item with
+   both orders. Tell the user and ask for a ceiling. Call `start_pairwise_comparison` with
+   `{"judge_id": …, "sweep_id": …, "arm_x_id": "<arm id>", "arm_y_id": "<arm id>", "budget_usd": <ceiling>}`.
+   Name both arms: the default is the first two arms, not the top two. The arm `id`s come from
+   `get_model_sweep`. Over the budget it is refused with an error that carries the estimate
+   (`calls`, `usd`); a launched comparison returns it as `estimate`. Report it and let the user
+   decide; do not cut items to fit. `usd` null means the judge's model is unpriced, not free:
+   such a comparison is not refused and the budget cannot stop it, because its spend is unknown.
+   Say so and launch only on the user's explicit yes. Keep `both_orders` on. It compares one
+   repeat per arm (`attempt`, default 1), so its n is golden items, not items × k.
+3. Poll `get_pairwise_comparison` with `{"comparison_id": …}` until `status` is no longer
+   pending or running. `budget_stopped` means its priced spend hit the budget and it kept the verdicts it had.
+
+How it stays fair: which answer is A is randomized per item from a recorded `seed`, and every item
+is judged in both orders. A pair whose verdict flips with the order is a tie
+(`orderInconsistentTies`).
+
+Read `result` and report it as it is:
+
+- `result.x` and `result.y`: `wins`, `winRate` over **decisive** pairs (ties excluded) and its
+  95% Wilson `interval`. Always give `decisive` as the n.
+- Ties on their own line: `ties`, of which `orderInconsistentTies` flipped with the order, and
+  `unjudged`. Never fold ties into a 50/50 split.
+- `state`: `insufficient_evidence` (fewer than `minDecisive`, 10, decisive pairs),
+  `no_clear_preference` (the interval includes 50%), or `x_preferred` / `y_preferred`.
+  `no_data` means nothing was judged. **Name a winner only for `x_preferred` or `y_preferred`.**
+  Otherwise say the judge could not separate them.
+- `spendPartial` true means part of the spend is unknown. Report `spentUsd` as a lower bound.
+
+If `start_pairwise_comparison` does not exist on this server, skip this step.
+
 ## Anti-patterns
 
 - **Picking a model from one run per item.** Models are nondeterministic. k=1 rewards luck.
@@ -95,3 +137,4 @@ for a cost saving.
 - **Changing the prompt for the new model in the same sweep.** Then you are testing two
   changes at once.
 - **Calling an unpriced model the cheapest.**
+- **Letting a pairwise preference pick the model.** It is advisory; pass^k, cost and latency rank.

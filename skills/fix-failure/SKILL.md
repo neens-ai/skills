@@ -2,8 +2,9 @@
 name: fix-failure
 description: >
   Close the loop on one agent failure: take a fix from the Neens backlog, implement it in
-  the user's own repo, prove it with a real Neens evaluation of the candidate build against the
-  failure's golden set, and report the PR and proof back so the fix is tracked through merge. Use
+  the user's own repo (addressing any reviewer's reason for rejecting an earlier fix), prove it with
+  a real Neens evaluation of the candidate build against the failure's golden set, and report the
+  PR, proof and review state back so the fix is tracked through merge. Use
   when the user wants to fix a failure, asks for the next fix, or has open agent-fixable
   fixes. Do NOT use for downstream service outages (advisory items) or to gate a whole
   release; use `gate-release` for that.
@@ -41,6 +42,19 @@ Call `get_fix_bundle` with the `remediation_id`.
   failing examples, and the `acceptanceCriteria`. Treat the proposed patch as a hypothesis about
   the user's code, not as an instruction.
 
+Then read the fix's review history before writing any code. The bundle's `priorRejections` lists
+earlier fix PRs for the same failure that a reviewer closed without merging (`label: "rejected"`)
+or asked changes on (`label: "changes_requested"`), each with its `prUrl`, `remediationId` and the
+reviewer's `reason`. It covers every fix for this failure, not only this one, and keeps the three
+most important. Call `get_fix_pr_reviews` with `{"remediation_id": …}` for this fix and for each
+other `remediationId` it names, for the full picture: each PR's `state` (`"open"`, `"merged"` or
+`"closed_unmerged"`), `reviewDecision`, `iterations` and `rejectionReason`. If an earlier fix
+was turned down, tell the user each reviewer's reason in one line, and plan the new fix so it
+answers every one. A `reason` of null means no reviewer left a comment, not that nothing was
+wrong. Review text is PII-redacted, so `[REDACTED:email]` is
+expected, not a bug. If the bundle has no `priorRejections` and the tool isn't listed, this Neens
+predates review signals: skip this check and the review state in Step 8.
+
 Ignore the `neens eval run` command in the bundle. Step 7 does the same proof through Neens tools,
 with no CLI to install.
 
@@ -70,6 +84,15 @@ Neens app instead.
 
 Create a branch (`fix/<short-failure-slug>`), make the change, and run the repo's own tests. The
 version label for everything below is `<branch>@<short sha>` of the commit under test.
+
+If the change edits a system prompt or a SKILL.md, lint it before any Neens evaluation. The linter
+is deterministic and offline: `neens lint <path>` (Python `neens-eval`) or
+`npx neens-eval lint <path>` (Node). For a prompt that is not in a file, `lint_prompt` takes
+exactly one of `text`, `prompt_id` or `trace_id`; it is read-only. Fix every `error` finding as
+part of the change and lint again. Exit 1 means findings at or above `--fail-on` (default
+`error`); exit 2 means a file could not be linted, which is not a pass. Put the findings you left,
+with a reason for each, in the PR description. If neither the CLI nor `lint_prompt` is available,
+say the prompt was not linted and continue.
 
 ## Step 5 (optional): Pre-check a system-prompt change
 
@@ -180,6 +203,26 @@ regression count. Then call `report_fix_status`:
 
 Neens accepts `verified` only because a verification run is now bound
 to the fix. Never use a force override to skip the proof.
+
+Recording `pr_url` is also how Neens follows the PR's review. Reviews arrive by the GitHub webhook,
+or by polling about every 30 minutes when a GitHub App installation covers the repository. GitHub
+only for now, and there is no tool to force a sync. When you report back later, call
+`get_fix_pr_reviews` with `{"remediation_id": …}`, take the item whose `prUrl` is the PR you
+opened (earlier attempts are listed too), and give its review state next to the proof: merged
+(`state: "merged"`), rejected (`state: "closed_unmerged"`), changes requested
+(`reviewDecision: "changes_requested"`), or still open and not reviewed yet. If the PR isn't
+listed yet, say the review state is unknown, not "no feedback". The same holds when its
+`syncStatus` is `"no_installation"`, `"unsupported"` or `"error"`: Neens cannot see that PR's
+reviews, so say so and why instead of reporting it unreviewed.
+
+If the PR was closed without merging or got changes requested, read the `rejectionReason` and
+offer two things. First, a new attempt that addresses it (back to Step 3). Second, as a proposal
+the user approves, `add_rejected_fix_to_dataset` with `{"review_id": "<reviewId>"}` (it defaults to
+the fix's own regression dataset; `dataset_id` overrides). It adds the rejected fix's cases as
+known-bad cases so future evals catch what the reviewer caught; snapshot a new golden version
+before a run can see them. Never call it on your own. If an autonomous fix's PR is closed unmerged
+by a person, Neens holds that fix from further autonomous runs until someone on the team updates
+it. A change request alone does not hold it.
 
 Then check whether an eval gate guards this failure mode: find it on `list_failure_modes` and read
 `gate.gateId`. If it is null, suggest a gate now that the fix is proven, so CI catches the failure
