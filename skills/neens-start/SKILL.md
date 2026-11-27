@@ -30,6 +30,7 @@ Call `get_current_project`.
   ```
 
   Other clients (Cursor, VS Code, …): https://app.neens.ai/docs/coding-agents/connect/
+  It worked when `get_current_project` returns a project in the new session.
 
 - **`projectId` is null.** The connection is not pinned to one project. Ask which project to use
   before reading anything.

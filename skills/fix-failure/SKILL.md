@@ -71,6 +71,15 @@ Neens app instead.
 Create a branch (`fix/<short-failure-slug>`), make the change, and run the repo's own tests. The
 version label for everything below is `<branch>@<short sha>` of the commit under test.
 
+If the change edits a system prompt or a SKILL.md, lint it before any Neens evaluation. The linter
+is deterministic and offline: `neens lint <path>` (Python `neens-eval`) or
+`npx neens-eval lint <path>` (Node). For a prompt that is not in a file, `lint_prompt` takes
+exactly one of `text`, `prompt_id` or `trace_id`; it is read-only. Fix every `error` finding as
+part of the change and lint again. Exit 1 means findings at or above `--fail-on` (default
+`error`); exit 2 means a file could not be linted, which is not a pass. Put the findings you left,
+with a reason for each, in the PR description. If neither the CLI nor `lint_prompt` is available,
+say the prompt was not linted and continue.
+
 ## Step 5 (optional): Pre-check a system-prompt change
 
 Skip this step unless the change is to the agent's system prompt. When it is, a cheap check can

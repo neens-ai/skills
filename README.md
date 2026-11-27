@@ -172,6 +172,14 @@ NEENS_TOKEN=... python3 scripts/check_skills.py \
 
 Run it whenever Neens ships a new MCP version. It needs only the Python standard library.
 
+CI (`.github/workflows/check-skills.yml`) runs it on every pull request and push to main, then
+lints every skill with the Neens prompt linter, which fails the build only on an `error` finding:
+
+```bash
+pip install "neens-eval==0.10.1"
+neens lint skills/*/SKILL.md          # or: npx neens-eval@0.10.1 lint skills/*/SKILL.md
+```
+
 ## Writing your own
 
 These skills cover the loop every agent team runs. Your agent has its own failure modes, tools
