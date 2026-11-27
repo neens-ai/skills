@@ -177,15 +177,19 @@ comparison, never deployed to score traces, and it never changes a gate.
    MCP; they need a person. Ask the user to open the finished comparison in the app and choose
    **Label pairs blind**: each input with its two answers as A and B, sides and the judge's
    verdict hidden, answered **A is better**, **Tie** or **B is better**. Ask for at least 10
-   labels, not all the same answer. Several reviewers may label; each item's majority counts.
+   labels, not all the same answer. Several reviewers may label; each item's majority counts, and a split counts as a tie.
 4. `get_pairwise_comparison` with `{"comparison_id": …}`. `humanAgreement` holds `n`,
    `agreementRate`, `decisiveAgreementRate` and `cohensKappa`. Report κ with its `n`.
    `cohensKappa` null means the labels hold a single answer, so chance agreement cannot be
    measured: ask for more varied labels, never report it as 0. `n` 0 means nobody has labelled
    yet (`labeledItems` counts the labelled items).
 
-Until κ has been read back on the user's labels, call the judge's preferences uncalibrated in
-every report. A low κ means the criteria do not describe what people prefer: rewrite them and compare again. If
+Hold it to the pass/fail bar in Step 5: at least 10 labelled items with more than one answer,
+and at most 2 in 10 wrong on the pairs the people found decisive (`decisiveAgreementRate` at
+least 0.8), with κ above 0. Until a comparison's `humanAgreement` meets that, call the judge's
+preferences uncalibrated in every report. Below it, the criteria do not describe what people
+prefer: rewrite them and compare again. Labels belong to the comparison they were given on, so
+a new comparison needs new labels before it counts as calibrated. If
 `start_pairwise_comparison` does not exist on this server, it has no pairwise judges: say so and
 compare the two candidates on pass/fail judges only.
 

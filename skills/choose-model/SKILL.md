@@ -96,17 +96,21 @@ When the top two arms both clear the bar, offer a blind pairwise comparison of t
 the same golden items. It is supporting evidence: pass^k, cost and latency stay the ranking, and
 a pairwise result never decides a gate or overturns the Step 4 decision.
 
-1. It needs a pairwise judge (`list_judges`, or create one with `write-judge`). Say whether its
-   agreement with people has been measured; an uncalibrated judge's preference is weak evidence.
+1. It needs a pairwise judge (`list_judges`, or create one with `write-judge`). Say whether it
+   meets the calibration bar in `write-judge` ("A pairwise judge", item 4); until it does, call
+   its preference uncalibrated and weak evidence.
 2. **Cost first.** It spends LLM budget on the user's connection: two judge calls per item with
    both orders. Tell the user and ask for a ceiling. Call `start_pairwise_comparison` with
    `{"judge_id": …, "sweep_id": …, "arm_x_id": "<arm id>", "arm_y_id": "<arm id>", "budget_usd": <ceiling>}`.
    Name both arms: the default is the first two arms, not the top two. The arm `id`s come from
    `get_model_sweep`. Over the budget it is refused with an error that carries the estimate
    (`calls`, `usd`); a launched comparison returns it as `estimate`. Report it and let the user
-   decide; do not cut items to fit. `usd` null means unpriced, not free. Keep `both_orders` on.
+   decide; do not cut items to fit. `usd` null means the judge's model is unpriced, not free:
+   such a comparison is not refused and the budget cannot stop it, because its spend is unknown.
+   Say so and launch only on the user's explicit yes. Keep `both_orders` on. It compares one
+   repeat per arm (`attempt`, default 1), so its n is golden items, not items × k.
 3. Poll `get_pairwise_comparison` with `{"comparison_id": …}` until `status` is no longer
-   pending or running. `budget_stopped` means it hit the budget and kept the verdicts it had.
+   pending or running. `budget_stopped` means its priced spend hit the budget and it kept the verdicts it had.
 
 How it stays fair: which answer is A is randomized per item from a recorded `seed`, and every item
 is judged in both orders. A pair whose verdict flips with the order is a tie
