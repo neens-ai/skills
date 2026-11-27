@@ -172,6 +172,11 @@ SKILL_FIELDS = {
         "budget_stopped", "no_data", "insufficient_evidence", "no_clear_preference",
         "x_preferred", "y_preferred",
     },
+    # ablation `verdict` values from get_ablation_run, and the fix kind propose_ablation_fix makes
+    "gate-release": {
+        "earns_its_place", "no_measurable_effect", "removing_it_helps", "no_data",
+        "prompt_change",
+    },
 }
 
 

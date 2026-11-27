@@ -39,8 +39,8 @@ Every skill in this repo follows eight rules:
 | [build-regression-set](skills/build-regression-set/SKILL.md) | A failure is confirmed. Freezes its traces, plus passing controls, into a golden set. |
 | [write-judge](skills/write-judge/SKILL.md) | A failure needs an automated check that takes judgment. Writes a pass/fail LLM judge and measures it against you; for two acceptable answers, an advisory blind pairwise judge calibrated on your pair labels. |
 | [write-code-judge](skills/write-code-judge/SKILL.md) | A rule decides the failure (a schema, a required tool call, a pattern, a limit). Writes a sandboxed Python judge, tests it on real traces, and measures it against you. |
-| [fix-failure](skills/fix-failure/SKILL.md) | Time to fix. Implements the fix in your repo, proves it, and reports PR and proof back. |
-| [gate-release](skills/gate-release/SKILL.md) | "Can we ship this?" Replays every regression set against the candidate and returns GO, NO-GO or NO DATA. |
+| [fix-failure](skills/fix-failure/SKILL.md) | Time to fix. Implements the fix in your repo (answering earlier reviewers' rejections), proves it, and reports PR, proof and review state back. |
+| [gate-release](skills/gate-release/SKILL.md) | "Can we ship this?" Replays every regression set against the candidate, reads each delta against its noise band, and returns GO, NO-GO or NO DATA. Can ablate a prompt change section by section. |
 | [choose-model](skills/choose-model/SKILL.md) | "Which model?" Runs a pass^k model sweep and reads it honestly, with an optional advisory blind pairwise comparison of the top two. |
 | [reliability-review](skills/reliability-review/SKILL.md) | "How are we doing?" A one-page, evidence-backed status report: targets, failure modes, the fix loop with owners, and which failure modes have an eval gate. |
 | [scout](skills/scout/SKILL.md) | "What did Scout find?" Reads Scout's findings, checks or changes what it may do, and sets standing instructions. |

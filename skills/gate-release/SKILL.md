@@ -4,9 +4,10 @@ description: >
   Decide whether a candidate agent version (a branch, a prompt change, a model or config change)
   is safe to ship: replay the agent's frozen golden and regression sets against it in a Neens
   pre-prod run, compare it with the current version, explain every regression from the
-  trajectories, and return GO, NO-GO or NO DATA with the evidence. Use when the user asks "can we
-  ship this", wants a release gate or a CI check, or wants two candidates compared. Do NOT use to
-  prove one specific fix; that is `fix-failure`.
+  trajectories, read every delta against its measured noise band, and return GO, NO-GO or NO DATA
+  with the evidence. Optionally ablates a prompt change section by section. Use when the user asks
+  "can we ship this", wants a release gate or a CI check, or wants two candidates compared. Do NOT
+  use to prove one specific fix; that is `fix-failure`.
 ---
 
 # Gate Release
@@ -53,6 +54,10 @@ this server, say so in the report and go on. For each gate returned, read `healt
   proves nothing, in CI or in your replay.
 - **`state` is `failed` or `error`.** The newest CI check failed, or could not run. Report it; if
   that build is the candidate, the replay must explain it.
+- **`saturated` is true.** CI passed 100% on each of the last `saturateAfterRuns` checks
+  (`perfectStreak` is the current run of them). The gate still passes, but it no longer tells a
+  good build from a bad one. This is advisory: it never blocks GO. Suggest the user add harder,
+  real failing cases to its golden set from recent failure modes (`build-regression-set`).
 
 List every one in the report: the gate's failure mode, `state`, the warnings and their
 `warningMessages`. Never cite a stale or blind gate's CI pass as evidence for GO. Repairing a gate
@@ -116,12 +121,29 @@ For each run:
    the item's id shows what the agent did differently, as an aligned step diff. Explain each
    regression in one sentence from that diff, for example "the candidate skipped `lookup_order`
    and answered from memory".
+4. Read `noise` on the comparison: the run-to-run noise band, measured from identical re-runs.
+   `band` is how far two identical runs drift apart on these items, as a pass-rate fraction (0.09
+   is ±9 pts); `withinNoise` says whether the overall delta is inside it. Outside the band is not
+   significance by itself: two runs that happened to agree on every item give a band of 0, so the
+   `regressionAnalysis` interval still decides whether a change is real. `get_preprod_noise`
+   with the run id reads the same band. If the comparison has no `noise` field, this server
+   predates the band: say so and read the `regressionAnalysis` interval alone.
 
 Rules for reading the numbers:
 
 - **Count regressions from `regressionCount`,** not from the length of the `regressions` list. The
   list is capped evidence.
 - **A null pass rate or a null delta means no data,** never 0% and never "no change".
+- **Quote the noise band beside every pass-rate delta:** "+2/30 (+6.7 pts), noise band ±9 pts,
+  within noise". A delta inside the band (`withinNoise` true) is indistinguishable from noise:
+  never call it a regression or an improvement. If `noise` is null or its `status` is
+  `unmeasured`, say "noise not measured", never assume a band. Then, if `canMeasure` is true,
+  offer to measure it: call `measure_preprod_noise` with `{"run_id": "<measureRunId>", "dry_run": true}` first (the
+  run Neens picked to re-run, usually the baseline) and show the user its `estimate`; only on
+  their yes, call it again without `dry_run` (pass `budget_usd` as a cap). It re-runs that run
+  unchanged and costs money. If `canMeasure` is false, quote `measureBlockedReason`; for runs your
+  own harness drove (runner mode), run the harness again on the same version and golden set, and
+  the band fills in on its own.
 - **Write the item count next to every rate:** "27/30 (90%)". On 10 items, one item is 10 points.
 - **If captured items are fewer than the total,** some inputs errored at the endpoint. Name how
   many. A verdict on 12 of 30 items is not a verdict on the set.
@@ -141,6 +163,11 @@ Rules for reading the numbers:
 - **NO DATA**: a run failed, or nothing was scored or captured. That is an infrastructure problem:
   fix the endpoint, the judges or the harness, and run again. It is not a verdict on the change.
 
+The noise band and saturation are advisory: they never change GO, NO-GO or NO DATA. Item
+regressions still count from `regressionCount` as above. When the overall delta sits inside the
+band, describe the pass-rate change as within noise, not as a regression or an improvement, and
+suggest more evidence (more items, or a re-run) before the user acts on it.
+
 Stale and blind gates from Step 2 do not block GO by themselves: the replay is the evidence, and a
 stale gate's judge can still score the replay. But a failure mode whose only judge is one flagged
 `judge_misses_failure` has no evidence: it is NO DATA for that failure mode, and the verdict cannot
@@ -148,9 +175,9 @@ be GO until it has a judge that catches it. Say which failure mode it is. A regr
 still makes it NO-GO.
 
 Report a table with one row per dataset: dataset, items scored/total, pass rate (candidate vs
-baseline), regressions, new passes, and cost and p95 latency deltas. Then the gates from Step 2,
-then the verdict, with its reasoning naming any gate it could not count, then the regression
-explanations.
+baseline), noise band (or "not measured"), regressions, new passes, and cost and p95 latency
+deltas. Then the gates from Step 2 (saturated ones as advisory), then the verdict, with its
+reasoning naming any gate it could not count, then the regression explanations.
 
 Do not relax `min_pass_rate` or `max_regressions` to turn NO-GO into GO. That call belongs to
 the user, and the report must say it was made.
@@ -162,6 +189,41 @@ When there are two or more candidate runs on the **same** frozen dataset version
 different dataset versions are not comparable, and Neens refuses them. To compare models, use
 `choose-model`.
 
+## Optional: ablate a prompt change
+
+When the candidate is a system prompt change, the user can ask which sections earn their place.
+An ablation replays one frozen golden set with the full prompt (`full_repeats` times, default 2,
+which also measures the noise band) and once per section with that one section removed. It ablates
+prompt sections only, never tools: the agent owns its tools. If `start_ablation_run` does not
+exist on this server, say so and skip this step.
+
+1. The push endpoint must use the system prompt Neens sends. Only after the user confirms the
+   agent uses that prompt instead of its own, register a separate endpoint for the ablation with
+   `register_agent_endpoint`: a new `name`, `"accepts_system_prompt": true`, and the same
+   `base_url`, `request_shape`, `invoke_path`, `model`, `output_jsonpath` and `auth_token` as the
+   existing one (`list_agent_endpoints` shows the first four; ask the user for the rest). Never
+   re-register the existing endpoint for this: re-registering replaces every option left out, and
+   the gate's own runs use it. Pass the new endpoint's `id` as `agent_connection_id` below.
+2. `start_ablation_run` with `"dry_run": true` first:
+   `{"name": "ablate: <version label>", "version_label": "<branch>@<sha>", "agent_connection_id": "<conn id>", "dataset_id": "<dataset id>", "system_prompt": "<prompt text>", "dry_run": true}`
+   (or `prompt_id` for a managed prompt). It lists the prompt's `sections` (their `key`s), the
+   `estimate` and any `refusals`, and starts nothing. Show the user the estimate and let them pick
+   the sections.
+3. On their yes, call it again without `dry_run`, with `"sections": ["<key>", "…"]` and a
+   `budget_usd` cap. Poll `get_ablation_run` with the `ablation_id`; `list_ablation_runs` finds
+   earlier ones.
+4. Report each section's `verdict` with its `quality` delta, interval and `n`, the noise band,
+   `costDelta` and `latencyDeltaMs`: `earns_its_place` (the agent is worse without it),
+   `no_measurable_effect` (this set cannot see an effect, which is not proof the section is
+   useless) or `removing_it_helps`. `pending`, `failed` and `no_data` are not verdicts on the
+   section. If `noiseMeasured` is false (for example `full_repeats` was 1), the verdict rests on
+   the interval alone: say so.
+
+"Removing it helps" is a proposal, never an edit. Do not touch the prompt. Offer to turn it into
+a fix and call `propose_ablation_fix` with the `ablation_id` and the section's `arm_id` (its `id`
+in `sections`) only after the user approves; it creates a `prompt_change` fix a person still
+verifies and merges. An ablation result never changes the release verdict.
+
 ## Anti-patterns
 
 - **Gating only on the new feature's dataset.** Old fixes come back through new changes. Replay
@@ -169,4 +231,6 @@ different dataset versions are not comparable, and Neens refuses them. To compar
 - **A production-window baseline when the incumbent can run.** Different inputs on each side mean
   a different test on each side.
 - **"Pass rate went from 90% to 88%" on 10 items.** That is one item. Say so.
+- **Calling an in-band delta a regression or an improvement,** or leaving the band out because it
+  was not measured. Quote it, or say it is not measured.
 - **Reporting NO DATA as NO-GO,** or as GO.
