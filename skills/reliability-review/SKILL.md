@@ -29,7 +29,7 @@ the nearest one and say which you used.
 | `list_traces` with `{"started_after": "<window start>", "limit": 1}` | Volume: `total` traces in the window |
 | `list_failure_modes` | Gate coverage: each failure mode's `gate` (`gateId` null means no gate guards it) |
 | `list_eval_gates` with `{"needs_attention": true}` | Gates that are failing, stale, or whose judge passes the very failure it guards |
-| `list_papercuts` with `{"range": "30d", "limit": 5}` | What the agent reported about its own tools and skills, grouped (agent-reported, not verified) |
+| `list_papercuts` with `{"range": "7d", "limit": 5}` | What the agent reported about its own tools and skills, grouped (agent-reported, not verified) |
 
 For each KPI that is `missed` or has a `regressed` trend, call `get_business_kpis` with its `kpi_id`
 to see which failure modes are eroding it. For a quality metric that dropped, `list_score_rows`
