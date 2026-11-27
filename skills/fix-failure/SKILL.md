@@ -44,14 +44,16 @@ Call `get_fix_bundle` with the `remediation_id`.
 
 Then read the fix's review history before writing any code. The bundle's `priorRejections` lists
 earlier fix PRs for the same failure that a reviewer closed without merging (`label: "rejected"`)
-or asked changes on (`label: "changes_requested"`), each with its `prUrl` and the reviewer's
-`reason`. Call `get_fix_pr_reviews` with `{"remediation_id": …}` for the full picture: each
-PR's `state` (`"open"`, `"merged"` or `"closed_unmerged"`), `reviewDecision`, `iterations` and
-`rejectionReason`. If an earlier fix was turned down, tell the user each reviewer's reason in
-one line, and plan the new fix so it answers every one. A `reason` of null means no reviewer left
-a comment, not that nothing was wrong. Review text is PII-redacted, so `[REDACTED:email]` is
+or asked changes on (`label: "changes_requested"`), each with its `prUrl`, `remediationId` and the
+reviewer's `reason`. It covers every fix for this failure, not only this one, and keeps the three
+most important. Call `get_fix_pr_reviews` with `{"remediation_id": …}` for this fix and for each
+other `remediationId` it names, for the full picture: each PR's `state` (`"open"`, `"merged"` or
+`"closed_unmerged"`), `reviewDecision`, `iterations` and `rejectionReason`. If an earlier fix
+was turned down, tell the user each reviewer's reason in one line, and plan the new fix so it
+answers every one. A `reason` of null means no reviewer left a comment, not that nothing was
+wrong. Review text is PII-redacted, so `[REDACTED:email]` is
 expected, not a bug. If the bundle has no `priorRejections` and the tool isn't listed, this Neens
-predates review signals: skip this check.
+predates review signals: skip this check and the review state in Step 8.
 
 Ignore the `neens eval run` command in the bundle. Step 7 does the same proof through Neens tools,
 with no CLI to install.
@@ -196,10 +198,13 @@ to the fix. Never use a force override to skip the proof.
 Recording `pr_url` is also how Neens follows the PR's review. Reviews arrive by the GitHub webhook,
 or by polling about every 30 minutes when a GitHub App installation covers the repository. GitHub
 only for now, and there is no tool to force a sync. When you report back later, call
-`get_fix_pr_reviews` with `{"remediation_id": …}` and give the review state next to the proof:
-merged (`state: "merged"`), changes requested (`reviewDecision: "changes_requested"`), rejected
-(`state: "closed_unmerged"`), or still open and not reviewed yet. If the PR isn't listed yet,
-say the review state is unknown, not "no feedback".
+`get_fix_pr_reviews` with `{"remediation_id": …}`, take the item whose `prUrl` is the PR you
+opened (earlier attempts are listed too), and give its review state next to the proof: merged
+(`state: "merged"`), rejected (`state: "closed_unmerged"`), changes requested
+(`reviewDecision: "changes_requested"`), or still open and not reviewed yet. If the PR isn't
+listed yet, say the review state is unknown, not "no feedback". The same holds when its
+`syncStatus` is `"no_installation"`, `"unsupported"` or `"error"`: Neens cannot see that PR's
+reviews, so say so and why instead of reporting it unreviewed.
 
 If the PR was closed without merging or got changes requested, read the `rejectionReason` and
 offer two things. First, a new attempt that addresses it (back to Step 3). Second, as a proposal
